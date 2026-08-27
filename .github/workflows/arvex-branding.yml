@@ -1,0 +1,58 @@
+name: Apply ArveX branding
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  brand:
+    if: "!contains(github.event.head_commit.message, '[arvex-branding]')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Replace branding and images
+        env:
+          IMAGE_URL: https://www.image2url.com/r2/default/images/1787813064495-33109ff3-ec5e-471b-a361-a09ed7563ab6.png
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, os
+
+          path = Path('bot_1787186930732.py')
+          text = path.read_text(encoding='utf-8')
+
+          # Brand replacements requested by the owner.
+          text = text.replace('Novixes', 'ArveX')
+          text = text.replace('UnixNodes', 'ArveX')
+          text = text.replace('Nodes', 'ArveX')
+
+          # Replace image2url-hosted image URLs with the new ArveX image.
+          image_url = os.environ['IMAGE_URL']
+          text = re.sub(r'https?://www\\.image2url\\.com/[^\\s\\"\\\'<>]+', image_url, text)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bot_1787186930732.py
+          if git diff --cached --quiet; then
+            echo "No branding changes needed."
+            exit 0
+          fi
+          git commit -m "Apply ArveX branding and image update [arvex-branding]"
+          git push
+
+      - name: Remove temporary workflow
+        if: success()
+        run: |
+          git rm .github/workflows/arvex-branding.yml
+          git commit -m "Remove temporary branding workflow [arvex-branding]"
+          git push
