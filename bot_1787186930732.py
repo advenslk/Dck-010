@@ -24,7 +24,7 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN environment variable is required! Set it in .env file or environment.")
 
-BOT_NAME = os.getenv('BOT_NAME', 'UnixNodes')
+BOT_NAME = os.getenv('BOT_NAME', 'ArveX')
 PREFIX = os.getenv('PREFIX', '!')
 YOUR_SERVER_IP = os.getenv('YOUR_SERVER_IP', '127.0.0.1')
 MAIN_ADMIN_ID = int(os.getenv('MAIN_ADMIN_ID', '0'))
@@ -3259,7 +3259,7 @@ async def reload_env(ctx):
         global YOUR_SERVER_IP, DEFAULT_STORAGE_POOL, CPU_THRESHOLD, RAM_THRESHOLD
         global VPS_USER_ROLE_ID
         
-        BOT_NAME = os.getenv('BOT_NAME', 'UnixNodes')
+        BOT_NAME = os.getenv('BOT_NAME', 'ArveX')
         PREFIX = os.getenv('PREFIX', '!')
         BOT_VERSION = os.getenv('BOT_VERSION', '7.1-PRO')
         BOT_DEVELOPER = os.getenv('BOT_DEVELOPER', 'Developer')
@@ -4934,7 +4934,7 @@ async def delete_vps(ctx, user: discord.Member, vps_number: int, *, reason: str 
     save_vps_data()
 
     # 4️⃣ Success embed
-    embed = create_success_embed("🌟 UnixNodes - VPS Deleted Successfully")
+    embed = create_success_embed("🌟 ArveX - VPS Deleted Successfully")
     add_field(embed, "Owner", user.mention, True)
     add_field(embed, "VPS Number", f"#{vps_number}", True)
     add_field(embed, "Container", container_name, False)
@@ -5235,9 +5235,9 @@ async def system_status(ctx):
         f"**Developer:** {BOT_DEVELOPER}", 
         True)
     
-    # Nodes Section
-    add_field(embed, "🌐 Nodes Overview",
-        f"**Total Nodes:** {total_nodes}\n"
+    # ArveX Section
+    add_field(embed, "🌐 ArveX Overview",
+        f"**Total ArveX:** {total_nodes}\n"
         f"**Running:** {running_nodes} 🟢\n"
         f"**Stopped:** {stopped_nodes} 🔴\n"
         f"**Local/Remote:** {local_nodes}/{remote_nodes}",
@@ -5346,7 +5346,7 @@ async def status_summary(ctx):
     
     embed = create_success_embed(
         "📈 Quick Status Summary",
-        f"**Nodes:** {running_nodes}/{total_nodes} 🟢\n"
+        f"**ArveX:** {running_nodes}/{total_nodes} 🟢\n"
         f"**VPS:** {total_vps} total\n"
         f"• Running: {running_vps} 🟢\n"
         f"• Stopped: {stopped_vps} 🔴\n"
@@ -5536,7 +5536,7 @@ async def user_info(ctx, user: discord.Member):
             inline=False
         )
 
-    embed.set_footer(text="UnixNodes • User Resource Dashboard")
+    embed.set_footer(text="ArveX • User Resource Dashboard")
     embed.timestamp = ctx.message.created_at
 
     await ctx.send(embed=embed)
@@ -5656,7 +5656,7 @@ async def server_stats(ctx):
         inline=True
     )
 
-    embed.set_footer(text="UnixNodes • Real-Time Monitoring")
+    embed.set_footer(text="ArveX • Real-Time Monitoring")
     embed.timestamp = ctx.message.created_at
 
     await ctx.send(embed=embed)
@@ -9014,7 +9014,7 @@ async def node_cmd(ctx, sub: str, *args):
         conn.close()
     elif sub == 'list':
         nodes = get_nodes()
-        embed = create_info_embed("Nodes List", "")
+        embed = create_info_embed("ArveX List", "")
         for n in nodes:
             status = "Local" if n['is_local'] else "Down"
             if not n['is_local']:
