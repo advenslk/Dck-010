@@ -4486,9 +4486,20 @@ class ManageView(discord.ui.View):
                 script = (
                     "set -eu; "
                     f"log={shlex.quote(log_path)}; "
-                    "nohup sh -c 'curl -sSf https://sshx.io/get | sh -s run' "
-                    ">\"$log\" 2>&1 < /dev/null & "
-                    "for i in $(seq 1 30); do "
+                    # Minimal VPS images may not include curl/CA certificates.
+                    # Bootstrap them before starting SSHX, then keep the session detached.
+                    "nohup sh -c '"
+                    "if ! command -v curl >/dev/null 2>&1; then "
+                    "if command -v apt-get >/dev/null 2>&1; then "
+                    "export DEBIAN_FRONTEND=noninteractive; "
+                    "apt-get update -qq && apt-get install -y -qq curl ca-certificates; "
+                    "elif command -v apk >/dev/null 2>&1; then "
+                    "apk add --no-cache curl ca-certificates; "
+                    "else echo \"curl is not installed and no supported package manager was found\" >&2; exit 127; fi; "
+                    "fi; "
+                    "curl -sSf https://sshx.io/get | sh -s run"
+                    "' "
+                    ">\"$log\" 2>&1 < /dev/null & "                    "for i in $(seq 1 30); do "
                     "url=$(grep -Eo 'https://sshx\\.io/s/[A-Za-z0-9_-]+(#[A-Za-z0-9_-]+)?' "
                     "\"$log\" | head -n 1 || true); "
                     "if [ -n \"$url\" ]; then printf '%s\\n' \"$url\"; exit 0; fi; "
