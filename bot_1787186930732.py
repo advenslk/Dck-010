@@ -2005,12 +2005,23 @@ def embed_to_v2_view(embed=None, old_view=None, content=None, timeout=300):
         except Exception:
             pass
 
-    container = discord.ui.Container(
-        accent_color=(embed.color.value if embed and embed.color else 0x5865F2)
-    )
+    accent = embed.color.value if embed and embed.color else 0x5865F2
+    container = discord.ui.Container(accent_color=accent)
+    remaining = 4000
+
+    def add_text(text):
+        nonlocal remaining
+        if not text or remaining <= 0:
+            return
+        text = str(text)
+        if len(text) > remaining:
+            text = text[:max(0, remaining - 1)] + "…"
+        if text:
+            container.add_item(discord.ui.TextDisplay(text))
+            remaining -= len(text)
 
     if content:
-        container.add_item(discord.ui.TextDisplay(content))
+        add_text(content)
 
     if embed:
         header = ""
@@ -2018,18 +2029,19 @@ def embed_to_v2_view(embed=None, old_view=None, content=None, timeout=300):
             header += f"# {embed.title}"
         if embed.description:
             header += f"\n{embed.description}"
-        if header:
-            container.add_item(discord.ui.TextDisplay(header))
+        add_text(header)
 
         for field in embed.fields:
+            if remaining <= 0:
+                break
             container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
-            container.add_item(discord.ui.TextDisplay(
-                f"> **__{field.name}__**\n{field.value}"
-            ))
+            remaining -= 1
+            add_text(f"> **__{field.name}__**\n{field.value}")
 
-        if embed.footer and embed.footer.text:
+        if embed.footer and embed.footer.text and remaining > 0:
             container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
-            container.add_item(discord.ui.TextDisplay(f"-# {embed.footer.text}"))
+            remaining -= 1
+            add_text(f"-# {embed.footer.text}")
 
     if old_view is not None:
         children = list(old_view.children)
