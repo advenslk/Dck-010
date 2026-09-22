@@ -4362,7 +4362,7 @@ class ManageView(discord.ui.View):
         stop_button = discord.ui.Button(label="Stop", emoji=EMOJI_STOP, style=discord.ButtonStyle.secondary)
         stop_button.callback = lambda inter: self.action_callback(inter, 'stop')
         ssh_button = discord.ui.Button(label="SSH", emoji=EMOJI_SSH, style=discord.ButtonStyle.primary)
-        ssh_button.callback = lambda inter: self.action_callback(inter, 'tmate')
+        ssh_button.callback = lambda inter: self.action_callback(inter, 'sshx')
         stats_button = discord.ui.Button(label="Stats", emoji=EMOJI_STATS, style=discord.ButtonStyle.secondary)
         stats_button.callback = lambda inter: self.action_callback(inter, 'stats')
         self.add_item(start_button)
@@ -4472,39 +4472,63 @@ class ManageView(discord.ui.View):
                 await interaction.followup.send(embed=create_success_embed("VPS Stopped", f"VPS `{container_name}` has been stopped!"), ephemeral=True)
             except Exception as e:
                 await interaction.followup.send(embed=create_error_embed("Stop Failed", str(e)), ephemeral=True)
-        elif action == 'tmate':
+        elif action == 'sshx':
             if suspended:
                 await interaction.followup.send(embed=create_error_embed("Access Denied", "Cannot access suspended VPS."), ephemeral=True)
                 return
-            await interaction.followup.send(embed=create_info_embed("SSH Access", "Generating SSH connection..."), ephemeral=True)
+            await interaction.followup.send(embed=create_info_embed("SSHX Access", "Generating secure SSHX terminal..."), ephemeral=True)
             try:
-                # Check if tmate is installed
-                try:
-                    await execute_lxc(container_name, f"exec {container_name} -- which tmate", node_id=node_id)
-                except:
-                    await interaction.followup.send(embed=create_info_embed("Installing SSH", "Installing tmate..."), ephemeral=True)
-                    await execute_lxc(container_name, f"exec {container_name} -- apt-get update -y", node_id=node_id)
-                    await execute_lxc(container_name, f"exec {container_name} -- apt-get install tmate -y", node_id=node_id)
-                    await interaction.followup.send(embed=create_success_embed("Installed", "SSH service installed!"), ephemeral=True)
-                session_name = f"{BOT_NAME.lower()}-session-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                await execute_lxc(container_name, f"exec {container_name} -- tmate -S /tmp/{session_name}.sock new-session -d", node_id=node_id)
-                await asyncio.sleep(3)
-                ssh_output = await execute_lxc(container_name, f"exec {container_name} -- tmate -S /tmp/{session_name}.sock display -p '#{{tmate_ssh}}'", node_id=node_id)
-                ssh_url = ssh_output.strip()
-                if ssh_url:
+                # sshx provides a browser-based terminal session directly inside the VPS.
+                # Use the official one-shot runner so the VPS does not need a permanent
+                # sshx package installation.
+                session_name = f"{BOT_NAME.lower()}-sshx-{int(time.time())}"
+                log_path = f"/tmp/{session_name}.log"
+                script = (
+                    "set -eu; "
+                    f"log={shlex.quote(log_path)}; "
+                    "nohup sh -c 'curl -sSf https://sshx.io/get | sh -s run' "
+                    ">\"$log\" 2>&1 < /dev/null & "
+                    "for i in $(seq 1 30); do "
+                    "url=$(grep -Eo 'https://sshx\\.io/s/[A-Za-z0-9_-]+(#[A-Za-z0-9_-]+)?' "
+                    "\"$log\" | head -n 1 || true); "
+                    "if [ -n \"$url\" ]; then printf '%s\\n' \"$url\"; exit 0; fi; "
+                    "sleep 1; "
+                    "done; "
+                    "cat \"$log\"; exit 1"
+                )
+                sshx_output = await execute_lxc(
+                    container_name,
+                    f"exec {container_name} -- sh -c {shlex.quote(script)}",
+                    timeout=45,
+                    node_id=node_id
+                )
+                sshx_url = sshx_output.strip().splitlines()[-1] if sshx_output.strip() else ""
+                if sshx_url.startswith("https://sshx.io/s/"):
                     try:
-                        ssh_embed = create_embed("🔑 SSH Access", f"SSH connection for VPS `{container_name}`:", 0x00ff88)
-                        add_field(ssh_embed, "Command", f"```{ssh_url}```", False)
-                        add_field(ssh_embed, "⚠️ Security", "This link is temporary. Do not share it.", False)
+                        ssh_embed = create_embed("🔑 SSHX Access", f"Browser terminal for VPS `{container_name}`:", 0x00ff88)
+                        add_field(ssh_embed, "Terminal", f"```{sshx_url}```", False)
+                        add_field(ssh_embed, "⚠️ Security", "This URL grants terminal access. Do not share it.", False)
                         add_field(ssh_embed, "📝 Session", f"Session ID: {session_name}", False)
                         await interaction.user.send(embed=ssh_embed)
-                        await interaction.followup.send(embed=create_success_embed("SSH Sent", f"Check your DMs for SSH link! Session: {session_name}"), ephemeral=True)
+                        await interaction.followup.send(
+                            embed=create_success_embed(
+                                "SSHX Sent",
+                                f"Check your DMs for the browser terminal link! Session: {session_name}"
+                            ),
+                            ephemeral=True
+                        )
                     except discord.Forbidden:
-                        await interaction.followup.send(embed=create_error_embed("DM Failed", "Enable DMs to receive SSH link!"), ephemeral=True)
+                        await interaction.followup.send(
+                            embed=create_error_embed("DM Failed", "Enable DMs to receive the SSHX terminal link!"),
+                            ephemeral=True
+                        )
                 else:
-                    await interaction.followup.send(embed=create_error_embed("SSH Failed", "No SSH URL generated."), ephemeral=True)
+                    await interaction.followup.send(
+                        embed=create_error_embed("SSHX Failed", "No SSHX terminal URL was generated."),
+                        ephemeral=True
+                    )
             except Exception as e:
-                await interaction.followup.send(embed=create_error_embed("SSH Error", str(e)), ephemeral=True)
+                await interaction.followup.send(embed=create_error_embed("SSHX Error", str(e)), ephemeral=True)
         new_embed = await self.create_vps_embed(self.selected_index)
         await interaction.edit_original_response(embed=new_embed, view=self)
 
