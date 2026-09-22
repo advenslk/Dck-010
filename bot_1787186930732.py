@@ -9774,9 +9774,6 @@ def _install_components_v2_compat():
             kwargs["view"] = embed_to_v2_view(embed, old_view, content)
         return await original_message_edit(self, **kwargs)
     discord.Message.edit = message_edit
-    if hasattr(discord, "WebhookMessage"):
-        discord.WebhookMessage.edit = message_edit
-
     discord._helzerx_v2_installed = True
 
 _install_components_v2_compat()
