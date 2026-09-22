@@ -2111,11 +2111,22 @@ async def execute_lxc(container_name: str, command: str, timeout=120, node_id: O
     elif operation == "init":
         image = parts[1]
         name = parts[2]
-        docker_command = (
-            f"docker run -d --name {shlex.quote(name)} --hostname {shlex.quote(name)} "
+        # Creation can be retried after a partial failure. Remove any stale
+        # container with the deterministic name before recreating it.
+        # Use sh -c so this works for both local execution and remote nodes.
+        safe_name = shlex.quote(name)
+        safe_image = shlex.quote(image)
+        run_command = (
+            f"docker run -d --name {safe_name} --hostname {safe_name} "
             f"--privileged --cgroupns=host --cap-add=ALL "
             f"--security-opt apparmor=unconfined --tmpfs /run --tmpfs /run/lock "
-            f"{shlex.quote(image)} /bin/sh -c 'while true; do sleep 3600; done'"
+            f"{safe_image} /bin/sh -c 'while true; do sleep 3600; done'"
+        )
+        docker_command = (
+            "sh -c "
+            + shlex.quote(
+                f"docker rm -f {safe_name} >/dev/null 2>&1 || true; {run_command}"
+            )
         )
     elif operation in ("start", "stop", "restart", "rm", "kill"):
         action = "rm -f" if operation == "delete" else operation
