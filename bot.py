@@ -3569,7 +3569,17 @@ class NodeSelectView(discord.ui.View):
             return
         node_id = int(self.select.values[0])
         self.select.disabled = True
-        await interaction.response.edit_message(view=self)
+
+        # Components V2 compatibility moves legacy View children into a
+        # LayoutView.  The legacy view is intentionally left empty, so edit
+        # the actual LayoutView attached to the Discord message.
+        v2_view = getattr(self, "_helzerx_v2_view", None)
+        if v2_view is not None:
+            await interaction.response.edit_message(view=v2_view)
+        else:
+            # Fallback for messages created without the compatibility layer.
+            await interaction.response.edit_message(view=self)
+
         os_view = OSSelectView(self.ram, self.cpu, self.disk, self.user, self.ctx, node_id, self.days)
         await interaction.followup.send(embed=create_info_embed("Select OS", "Choose the OS for the VPS."), view=os_view)
 
@@ -9703,7 +9713,10 @@ def _install_components_v2_compat():
             if embeds:
                 embed = embeds[0]
             kwargs["content"] = None
-            kwargs["view"] = embed_to_v2_view(embed, old_view, content)
+            converted_view = embed_to_v2_view(embed, old_view, content)
+            if old_view is not None:
+                old_view._helzerx_v2_view = converted_view
+            kwargs["view"] = converted_view
         return await original_messageable_send(self, *args, **kwargs)
     discord.abc.Messageable.send = messageable_send
 
