@@ -2131,7 +2131,13 @@ async def execute_lxc(container_name: str, command: str, timeout=120, node_id: O
     elif operation == "config":
         target = parts[2] if len(parts) > 2 else container_name
         if len(parts) >= 5 and parts[1] == "set" and parts[3] == "limits.memory":
-            docker_command = f"docker update --memory {shlex.quote(parts[4])} {shlex.quote(target)}"
+            # Docker requires memory-swap >= memory. Keep both limits equal
+            # so every VPS receives a valid, deterministic memory limit.
+            memory_limit = shlex.quote(parts[4])
+            docker_command = (
+                f"docker update --memory {memory_limit} "
+                f"--memory-swap {memory_limit} {shlex.quote(target)}"
+            )
         elif len(parts) >= 5 and parts[1] == "set" and parts[3] == "limits.cpu":
             docker_command = f"docker update --cpus {shlex.quote(parts[4])} {shlex.quote(target)}"
         elif len(parts) >= 5 and parts[1] == "device" and parts[2] == "set":
