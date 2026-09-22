@@ -15,6 +15,9 @@ import sqlite3
 import random
 import requests
 from dotenv import load_dotenv
+from emoji import (
+    EMOJI_REINSTALL, EMOJI_START, EMOJI_STOP, EMOJI_SSH, EMOJI_STATS,
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1991,6 +1994,72 @@ def format_list_item(text, bullet=EmbedIcons.BULLET):
 def create_section_header(text):
     """Create a section header with subtle styling"""
     return f"**{text}**"
+
+def embed_to_v2_view(embed=None, old_view=None, content=None, timeout=300):
+    """Convert legacy embed/content + optional View into a real Components V2 LayoutView."""
+    view = discord.ui.LayoutView(timeout=timeout)
+    if old_view is not None:
+        try:
+            view.interaction_check = old_view.interaction_check
+            view.on_error = old_view.on_error
+        except Exception:
+            pass
+
+    container = discord.ui.Container(
+        accent_color=(embed.color.value if embed and embed.color else 0x5865F2)
+    )
+
+    if content:
+        container.add_item(discord.ui.TextDisplay(content))
+
+    if embed:
+        header = ""
+        if embed.title:
+            header += f"# {embed.title}"
+        if embed.description:
+            header += f"\n{embed.description}"
+        if header:
+            container.add_item(discord.ui.TextDisplay(header))
+
+        for field in embed.fields:
+            container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+            container.add_item(discord.ui.TextDisplay(
+                f"> **__{field.name}__**\n{field.value}"
+            ))
+
+        if embed.footer and embed.footer.text:
+            container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+            container.add_item(discord.ui.TextDisplay(f"-# {embed.footer.text}"))
+
+    if old_view is not None:
+        children = list(old_view.children)
+        old_view.clear_items()
+        rows = {}
+        for item in children:
+            if isinstance(item, (discord.ui.Button, discord.ui.Select)):
+                key = getattr(item, "row", None)
+                if key is None:
+                    key = len(rows)
+                row = rows.setdefault(key, discord.ui.ActionRow())
+                row.add_item(item)
+        for row in rows.values():
+            container.add_item(row)
+
+    view.add_item(container)
+    return view
+
+def build_v2_view(title, description="", sections=None, accent_color=0x5865F2, timeout=300):
+    view = discord.ui.LayoutView(timeout=timeout)
+    container = discord.ui.Container(accent_color=accent_color)
+    text = f"# {title}"
+    if description:
+        text += f"\n{description}"
+    container.add_item(discord.ui.TextDisplay(text))
+    for name, value in (sections or []):
+        container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+        container.add_item(discord.ui.TextDisplay(f"> **__{name}__**\n{value}"))
+    view.add_item(container)
+    return view
 
 # Admin checks
 def is_admin():
@@ -4245,16 +4314,16 @@ class ManageView(discord.ui.View):
 
     def add_action_buttons(self):
         if not self.is_shared and not self.is_admin:
-            reinstall_button = discord.ui.Button(label="🔄 Reinstall", style=discord.ButtonStyle.danger)
+            reinstall_button = discord.ui.Button(label="Reinstall", emoji=EMOJI_REINSTALL, style=discord.ButtonStyle.danger)
             reinstall_button.callback = lambda inter: self.action_callback(inter, 'reinstall')
             self.add_item(reinstall_button)
-        start_button = discord.ui.Button(label="▶ Start", style=discord.ButtonStyle.success)
+        start_button = discord.ui.Button(label="Start", emoji=EMOJI_START, style=discord.ButtonStyle.success)
         start_button.callback = lambda inter: self.action_callback(inter, 'start')
-        stop_button = discord.ui.Button(label="⏸ Stop", style=discord.ButtonStyle.secondary)
+        stop_button = discord.ui.Button(label="Stop", emoji=EMOJI_STOP, style=discord.ButtonStyle.secondary)
         stop_button.callback = lambda inter: self.action_callback(inter, 'stop')
-        ssh_button = discord.ui.Button(label="🔑 SSH", style=discord.ButtonStyle.primary)
+        ssh_button = discord.ui.Button(label="SSH", emoji=EMOJI_SSH, style=discord.ButtonStyle.primary)
         ssh_button.callback = lambda inter: self.action_callback(inter, 'tmate')
-        stats_button = discord.ui.Button(label="📊 Stats", style=discord.ButtonStyle.secondary)
+        stats_button = discord.ui.Button(label="Stats", emoji=EMOJI_STATS, style=discord.ButtonStyle.secondary)
         stats_button.callback = lambda inter: self.action_callback(inter, 'stats')
         self.add_item(start_button)
         self.add_item(stop_button)
@@ -9607,6 +9676,83 @@ async def info_alias(ctx, user: discord.Member = None):
     else:
         await ctx.send(embed=create_error_embed("Access Denied", "This command requires admin privileges."))
 # Run the bot
+# Components V2 compatibility layer: transparently replace legacy embeds with V2 containers.
+def _install_components_v2_compat():
+    if getattr(discord, "_helzerx_v2_installed", False):
+        return
+
+    original_messageable_send = discord.abc.Messageable.send
+    async def messageable_send(self, *args, **kwargs):
+        embed = kwargs.pop("embed", None)
+        embeds = kwargs.pop("embeds", None)
+        content = kwargs.get("content")
+        old_view = kwargs.get("view")
+        if embed is not None or embeds:
+            if embeds:
+                embed = embeds[0]
+            kwargs["content"] = None
+            kwargs["view"] = embed_to_v2_view(embed, old_view, content)
+        return await original_messageable_send(self, *args, **kwargs)
+    discord.abc.Messageable.send = messageable_send
+
+    original_response_send = discord.InteractionResponse.send_message
+    async def response_send(self, content=None, **kwargs):
+        embed = kwargs.pop("embed", None)
+        embeds = kwargs.pop("embeds", None)
+        old_view = kwargs.get("view")
+        if embed is not None or embeds:
+            if embeds:
+                embed = embeds[0]
+            kwargs["view"] = embed_to_v2_view(embed, old_view, content)
+            content = None
+        return await original_response_send(self, content, **kwargs)
+    discord.InteractionResponse.send_message = response_send
+
+    original_response_edit = discord.InteractionResponse.edit_message
+    async def response_edit(self, content=None, **kwargs):
+        embed = kwargs.pop("embed", None)
+        embeds = kwargs.pop("embeds", None)
+        old_view = kwargs.get("view")
+        if embed is not None or embeds:
+            if embeds:
+                embed = embeds[0]
+            kwargs["view"] = embed_to_v2_view(embed, old_view, content)
+            content = None
+        return await original_response_edit(self, content, **kwargs)
+    discord.InteractionResponse.edit_message = response_edit
+
+    original_interaction_edit = discord.Interaction.edit_original_response
+    async def interaction_edit(self, **kwargs):
+        embed = kwargs.pop("embed", None)
+        embeds = kwargs.pop("embeds", None)
+        content = kwargs.get("content")
+        old_view = kwargs.get("view")
+        if embed is not None or embeds:
+            if embeds:
+                embed = embeds[0]
+            kwargs["content"] = None
+            kwargs["view"] = embed_to_v2_view(embed, old_view, content)
+        return await original_interaction_edit(self, **kwargs)
+    discord.Interaction.edit_original_response = interaction_edit
+
+    original_message_edit = discord.Message.edit
+    async def message_edit(self, **kwargs):
+        embed = kwargs.pop("embed", None)
+        embeds = kwargs.pop("embeds", None)
+        content = kwargs.get("content")
+        old_view = kwargs.get("view")
+        if embed is not None or embeds:
+            if embeds:
+                embed = embeds[0]
+            kwargs["content"] = None
+            kwargs["view"] = embed_to_v2_view(embed, old_view, content)
+        return await original_message_edit(self, **kwargs)
+    discord.Message.edit = message_edit
+
+    discord._helzerx_v2_installed = True
+
+_install_components_v2_compat()
+
 if __name__ == "__main__":
     if DISCORD_TOKEN:
         bot.run(DISCORD_TOKEN)
