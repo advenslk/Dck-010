@@ -9695,6 +9695,20 @@ def _install_components_v2_compat():
         return await original_messageable_send(self, *args, **kwargs)
     discord.abc.Messageable.send = messageable_send
 
+    original_webhook_send = discord.Webhook.send
+    async def webhook_send(self, *args, **kwargs):
+        embed = kwargs.pop("embed", None)
+        embeds = kwargs.pop("embeds", None)
+        content = kwargs.get("content")
+        old_view = kwargs.get("view")
+        if embed is not None or embeds:
+            if embeds:
+                embed = embeds[0]
+            kwargs["content"] = None
+            kwargs["view"] = embed_to_v2_view(embed, old_view, content)
+        return await original_webhook_send(self, *args, **kwargs)
+    discord.Webhook.send = webhook_send
+
     original_response_send = discord.InteractionResponse.send_message
     async def response_send(self, content=None, **kwargs):
         embed = kwargs.pop("embed", None)
@@ -9748,6 +9762,8 @@ def _install_components_v2_compat():
             kwargs["view"] = embed_to_v2_view(embed, old_view, content)
         return await original_message_edit(self, **kwargs)
     discord.Message.edit = message_edit
+    if hasattr(discord, "WebhookMessage"):
+        discord.WebhookMessage.edit = message_edit
 
     discord._helzerx_v2_installed = True
 
