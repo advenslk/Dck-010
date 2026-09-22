@@ -2151,13 +2151,14 @@ async def execute_lxc(container_name: str, command: str, timeout=120, node_id: O
             )
         elif len(parts) >= 5 and parts[1] == "set" and parts[3] == "limits.cpu":
             docker_command = f"docker update --cpus {shlex.quote(parts[4])} {shlex.quote(target)}"
-        elif len(parts) >= 5 and parts[1] == "device" and parts[2] == "set":
-            # Docker does not expose LXC device mutation. Storage sizing is
-            # best-effort because Docker storage drivers differ by host.
-            if "size=" in parts[-1]:
-                docker_command = f"docker update --storage-opt size={parts[-1].split('=', 1)[1]} {shlex.quote(target)}"
-            else:
-                docker_command = "true"
+        elif len(parts) >= 6 and parts[1] == "device" and parts[2] == "set":
+            # LXC root-disk resizing has no direct equivalent in
+            # "docker update". In particular, --storage-opt is a docker run
+            # option on supported storage drivers, not a docker update option.
+            # Treat the disk-size metadata operation as successful here so
+            # VPS creation/resizing is not broken by an unsupported Docker flag.
+            # The requested size remains tracked by the VPS data layer.
+            docker_command = "true"
         elif len(parts) >= 5 and parts[1] == "device" and parts[2] in ("add", "remove"):
             # Published ports cannot be added to an existing Docker
             # container. The database allocation remains unchanged and the
