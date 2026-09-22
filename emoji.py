@@ -1,0 +1,16 @@
+"""Centralized emoji definitions for HelzerX VPS UI."""
+
+EMOJI_REINSTALL = "🔄"
+EMOJI_START = "▶️"
+EMOJI_STOP = "⏸️"
+EMOJI_SSH = "🔑"
+EMOJI_STATS = "📊"
+
+EMOJI_RESOURCES = "📊"
+EMOJI_EXPIRATION = "⏱️"
+EMOJI_USAGE = "📈"
+EMOJI_CONTROLS = "🎮"
+EMOJI_WARNING = "⚠️"
+EMOJI_SUCCESS = "✅"
+EMOJI_CONFIRM = "✅"
+EMOJI_CANCEL = "✖️"
