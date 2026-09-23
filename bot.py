@@ -34,7 +34,7 @@ MAIN_ADMIN_ID = int(os.getenv('MAIN_ADMIN_ID', '0'))
 VPS_USER_ROLE_ID = int(os.getenv('VPS_USER_ROLE_ID', '0'))
 DEFAULT_STORAGE_POOL = os.getenv('DEFAULT_STORAGE_POOL', 'default')
 BOT_VERSION = os.getenv('BOT_VERSION', '8.0-PRO')
-BOT_DEVELOPER = os.getenv('BOT_DEVELOPER', 'Hopingboz')
+BOT_DEVELOPER = os.getenv('BOT_DEVELOPER', 'HelzerX')
 
 # OS Options for VPS Creation and Reinstall
 OS_OPTIONS = [
@@ -4768,7 +4768,7 @@ async def vps_list(ctx, node_id: int = 1):
             )
             chunk_text = "\n".join(chunk)
             add_field(page_embed, "📋 **VPS List**", f"```{chunk_text}```", False)
-            page_embed.set_footer(text=f"Total: {total_vps} VPS | Powered by Your Bot")
+            page_embed.set_footer(text=f"Total: {total_vps} VPS | Powered by HelzerX")
             await ctx.send(embed=page_embed)
     else:
         add_field(embed, "📋 **VPS List**", "No deployments yet. Launch one! 🚀", False)
