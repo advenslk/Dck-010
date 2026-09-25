@@ -47,12 +47,55 @@ OS_OPTIONS = [
     {"label": "Debian 13 (Trixie)", "value": "debian:13"},
 ]
 
+# Runtime storage
+# The container root filesystem can become read-only after a host-level
+# filesystem error. Prefer the project directory, then writable tmpfs paths.
+def _get_runtime_dir():
+    requested = os.getenv("HELZERX_DATA_DIR")
+    candidates = [requested] if requested else [
+        os.path.dirname(os.path.abspath(__file__)),
+        "/dev/shm/helzerx-vps",
+        "/tmp/helzerx-vps",
+    ]
+
+    for candidate in candidates:
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            probe = os.path.join(candidate, ".write_test")
+            with open(probe, "w", encoding="utf-8") as f:
+                f.write("ok")
+            os.remove(probe)
+            return candidate
+        except (OSError, PermissionError):
+            continue
+
+    raise OSError(
+        "No writable runtime directory found. The container filesystem is read-only "
+        "and /dev/shm and /tmp are not writable."
+    )
+
+RUNTIME_DIR = _get_runtime_dir()
+BOT_LOG_PATH = os.path.join(RUNTIME_DIR, "bot.log")
+DB_PATH = os.path.join(RUNTIME_DIR, "vps.db")
+
+# Preserve the existing database when falling back to temporary storage.
+_SOURCE_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vps.db")
+if DB_PATH != _SOURCE_DB and not os.path.exists(DB_PATH) and os.path.exists(_SOURCE_DB):
+    try:
+        shutil.copy2(_SOURCE_DB, DB_PATH)
+        for suffix in ("-wal", "-shm"):
+            src = _SOURCE_DB + suffix
+            if os.path.exists(src):
+                shutil.copy2(src, DB_PATH + suffix)
+    except OSError:
+        pass
+
 # Configure logging to file and console
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('bot.log'),
+        logging.FileHandler(BOT_LOG_PATH),
         logging.StreamHandler()
     ]
 )
@@ -61,7 +104,7 @@ logger = logging.getLogger(f'{BOT_NAME.lower()}_vps_bot')
 # Database setup
 def get_db():
     """Get database connection with proper timeout and WAL mode"""
-    conn = sqlite3.connect('vps.db', timeout=60.0, check_same_thread=False, isolation_level=None)  # 60 second timeout, autocommit mode
+    conn = sqlite3.connect(DB_PATH, timeout=60.0, check_same_thread=False, isolation_level=None)  # 60 second timeout, autocommit mode
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=60000")  # 60 second busy timeout
     conn.execute("PRAGMA synchronous=NORMAL")  # Faster writes
