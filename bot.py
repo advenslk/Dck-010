@@ -3742,6 +3742,7 @@ class OSSelectView(discord.ui.View):
             add_field(dm_embed, "VPS Details", f"**VPS ID:** #{vps_count}\n**Container Name:** `{container_name}`\n**Configuration:** {config_str}\n**Status:** Running\n**OS:** {os_version}\n**Created:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", False)
             add_field(dm_embed, "Management", f"• Use `{PREFIX}manage` to start/stop/reinstall your VPS\n• Use `{PREFIX}manage` → SSH for terminal access\n• Contact admin for upgrades or issues", False)
             add_field(dm_embed, "Important Notes", "• Full root access via SSH\n• Docker-ready with nesting and privileged mode\n• Back up your data regularly", False)
+            add_field(dm_embed, "💬 Feedback", "We’d love to hear how your experience has been with HelzerX Cloud.\n\n📝 Leave your review in <#1552629200714866718>\n\nYour feedback helps us improve our service, performance, and support.", False)
             try:
                 await self.user.send(embed=dm_embed)
             except discord.Forbidden:
