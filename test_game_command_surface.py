@@ -2,6 +2,7 @@ import ast
 from pathlib import Path
 
 BOT_SOURCE = Path(__file__).with_name("bot.py").read_text(encoding="utf-8")
+EMOJI_SOURCE = Path(__file__).with_name("emoji.py").read_text(encoding="utf-8")
 
 
 def _command_decorators(function_name):
@@ -65,3 +66,19 @@ def test_help_menu_contains_game_server_category():
     assert 'game-category-delete' in BOT_SOURCE
     assert '<ram_gb>' in BOT_SOURCE
     assert '<disk_gb>' in BOT_SOURCE
+
+
+def test_help_category_emojis_use_centralized_game_constants():
+    assert 'EMOJI_GAME' in EMOJI_SOURCE
+    assert 'EMOJI_GAME_SERVER' in EMOJI_SOURCE
+    assert 'EMOJI_NETWORK' in EMOJI_SOURCE
+    assert 'EMOJI_GAME_NODE' in EMOJI_SOURCE
+    assert 'EMOJI_GAME_SECURITY' in EMOJI_SOURCE
+    start = BOT_SOURCE.index('def get_category_emoji')
+    end = BOT_SOURCE.index('def update_embed', start)
+    helper = BOT_SOURCE[start:end]
+    assert '"games": EMOJI_GAME' in helper
+    assert '"vps": EMOJI_GAME_SERVER' in helper
+    assert '"ports": EMOJI_NETWORK' in helper
+    assert '"nodes": EMOJI_GAME_NODE' in helper
+    assert '"admin": EMOJI_GAME_SECURITY' in helper
