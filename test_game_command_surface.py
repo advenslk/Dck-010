@@ -16,6 +16,14 @@ def _command_decorators(function_name):
     raise AssertionError(f"Function {function_name!r} not found")
 
 
+def _function(function_name):
+    tree = ast.parse(BOT_SOURCE)
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+            return node
+    raise AssertionError(f"Function {function_name!r} not found")
+
+
 def test_game_plan_admin_commands_have_vps_style_aliases():
     create = _command_decorators("game_plan_create")
     edit = _command_decorators("game_plan_edit")
@@ -28,6 +36,25 @@ def test_game_plan_admin_commands_have_vps_style_aliases():
     assert any("list-game-plans" in d and "aliases" in d for d in listing)
 
 
+def test_game_plan_create_uses_gb_for_ram_and_disk():
+    fn = _function("game_plan_create")
+    arg_names = [arg.arg for arg in fn.args.args]
+    assert arg_names[2:6] == ["ram_gb", "cpu_percent", "disk_gb", "days"]
+    assert "ram_mb" not in arg_names
+    assert "disk_mb" not in arg_names
+
+    source = ast.unparse(fn)
+    assert "ram_gb * 1024" in source
+    assert "disk_gb * 1024" in source
+
+
+def test_game_plan_edit_accepts_gb_resource_fields():
+    fn = _function("game_plan_edit")
+    source = ast.unparse(fn)
+    assert '"ram_gb"' in source
+    assert '"disk_gb"' in source
+
+
 def test_help_menu_contains_game_server_category():
     assert '"games":' in BOT_SOURCE
     assert 'game-plan-create' in BOT_SOURCE
@@ -36,3 +63,5 @@ def test_help_menu_contains_game_server_category():
     assert 'game-category-create' in BOT_SOURCE
     assert 'game-category-edit' in BOT_SOURCE
     assert 'game-category-delete' in BOT_SOURCE
+    assert '<ram_gb>' in BOT_SOURCE
+    assert '<disk_gb>' in BOT_SOURCE
