@@ -21,7 +21,8 @@ from emoji import (
     EMOJI_REINSTALL, EMOJI_START, EMOJI_STOP, EMOJI_SSH, EMOJI_STATS,
     EMOJI_GAME, EMOJI_MINECRAFT, EMOJI_BEDROCK, EMOJI_GAME_SERVER, EMOJI_PANEL,
     EMOJI_CONSOLE, EMOJI_BACKUP, EMOJI_NETWORK, EMOJI_FILES, EMOJI_RENEW,
-    EMOJI_UPGRADE, EMOJI_DELETE, EMOJI_DEPLOY,
+    EMOJI_UPGRADE, EMOJI_DELETE, EMOJI_DEPLOY, EMOJI_GAME_NODE,
+    EMOJI_GAME_SECURITY,
 )
 from security import SecurityPolicy, evaluate_vps_request
 from abuse_monitor import AbusePolicy, evaluate_usage, parse_docker_stats, warning_level
@@ -10345,13 +10346,13 @@ class HelpView(discord.ui.View):
             "coins": "💰",
             "plans": "🚀",
             "coupons": "🎟️",
-            "vps": "🖥️",
-            "games": "🎮",
-            "ports": "🔌",
+            "vps": EMOJI_GAME_SERVER,
+            "games": EMOJI_GAME,
+            "ports": EMOJI_NETWORK,
             "system": "⚙️",
             "bot": "🤖",
-            "nodes": "🌐",
-            "admin": "🛡️",
+            "nodes": EMOJI_GAME_NODE,
+            "admin": EMOJI_GAME_SECURITY,
             "main_admin": "👑"
         }
         return emojis.get(category, "📁")
