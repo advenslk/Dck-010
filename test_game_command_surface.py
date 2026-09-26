@@ -22,10 +22,10 @@ def test_game_plan_admin_commands_have_vps_style_aliases():
     delete = _command_decorators("game_plan_delete")
     listing = _command_decorators("game_plan_list")
 
-    assert any('"create-game-plan"' in d and "aliases" in d for d in create)
-    assert any('"edit-game-plan"' in d and "aliases" in d for d in edit)
-    assert any('"delete-game-plan"' in d and "aliases" in d for d in delete)
-    assert any('"list-game-plans"' in d and "aliases" in d for d in listing)
+    assert any("create-game-plan" in d and "aliases" in d for d in create)
+    assert any("edit-game-plan" in d and "aliases" in d for d in edit)
+    assert any("delete-game-plan" in d and "aliases" in d for d in delete)
+    assert any("list-game-plans" in d and "aliases" in d for d in listing)
 
 
 def test_help_menu_contains_game_server_category():
