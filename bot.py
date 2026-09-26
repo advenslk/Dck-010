@@ -2380,7 +2380,7 @@ async def game_plans(ctx):
             add_field(embed, f"{category['icon']} {category['name']}", "\n".join(lines), False)
     await ctx.send(embed=embed)
 
-@bot.command(name="game-category-create")
+@bot.command(name="game-category-create", aliases=["create-game-category", "add-game-category", "new-game-category"])
 @is_admin()
 async def game_category_create(ctx, name: str, icon: str = "🎮", *, description: str = ""):
     conn = get_db()
@@ -2394,7 +2394,7 @@ async def game_category_create(ctx, name: str, icon: str = "🎮", *, descriptio
     conn.close()
     await ctx.send(embed=create_success_embed("Game Category Created", f"{icon} {name} is ready for plans."))
 
-@bot.command(name="game-plan-create")
+@bot.command(name="game-plan-create", aliases=["create-game-plan", "add-game-plan", "new-game-plan"])
 @is_admin()
 async def game_plan_create(ctx, name: str, category: str, ram_mb: int, cpu_percent: int, disk_mb: int, days: int, cost: int, node_id: int, nest_id: int, egg_id: int, allocation_id: int = 0, icon: str = "🎮"):
     if min(ram_mb, cpu_percent, disk_mb, days, cost, node_id, nest_id, egg_id) <= 0:
@@ -2411,7 +2411,7 @@ async def game_plan_create(ctx, name: str, category: str, ram_mb: int, cpu_perce
     plan_id = save_game_plan(get_db, {"name":name,"category":category_row["name"],"description":f"{ram_mb//1024:g}GB RAM • {cpu_percent}% CPU • {disk_mb//1024:g}GB Disk","ram_mb":ram_mb,"cpu_percent":cpu_percent,"disk_mb":disk_mb,"duration_days":days,"cost_coins":cost,"node_id":node_id,"nest_id":nest_id,"egg_id":egg_id,"allocation_id":allocation_id,"icon":icon})
     await ctx.send(embed=create_success_embed("Game Plan Created", f"ID: {plan_id}\n{icon} {name}\nCategory: {category_row['name']}\nUse {PREFIX}game-plan-edit {plan_id} <field> <value> for changes."))
 
-@bot.command(name="game-plan-edit")
+@bot.command(name="game-plan-edit", aliases=["edit-game-plan", "update-game-plan", "modify-game-plan"])
 @is_admin()
 async def game_plan_edit(ctx, plan_id: int, field: str, *, value: str):
     allowed = {"name","category","description","ram_mb","cpu_percent","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id","docker_image","startup","environment","active","icon"}
@@ -2434,7 +2434,7 @@ async def game_plan_edit(ctx, plan_id: int, field: str, *, value: str):
     save_game_plan(get_db, raw, plan_id=plan_id)
     await ctx.send(embed=create_success_embed("Game Plan Updated", f"Plan {plan_id} updated: {field} → {value}"))
 
-@bot.command(name="game-plan-delete")
+@bot.command(name="game-plan-delete", aliases=["delete-game-plan", "remove-game-plan"])
 @is_admin()
 async def game_plan_delete(ctx, plan_id: int):
     if delete_game_plan(get_db, plan_id):
@@ -2507,7 +2507,7 @@ class GameControlView(discord.ui.View):
             logger.exception("Game server action failed")
             await i.followup.send(embed=create_error_embed("Action Failed",str(exc)[:900]),ephemeral=True)
 
-@bot.command(name="game-control")
+@bot.command(name="game-control", aliases=["game-server-control", "manage-game-server"])
 async def game_control(ctx, server_id:int):
     server=_get_owned_game_server(str(ctx.author.id),server_id)
     if not server: await ctx.send(embed=create_error_embed("Server Not Found","Use !game-manage first.")); return
@@ -2516,7 +2516,7 @@ async def game_control(ctx, server_id:int):
     identifier=attrs.get("identifier",""); url=f"{_panel_url()}/server/{identifier}" if _panel_url() and identifier else _panel_url()
     await ctx.send(embed=_game_manage_embed(server,attrs),view=GameControlView(ctx,server,url))
 
-@bot.command(name="game-upgrade")
+@bot.command(name="game-upgrade", aliases=["upgrade-game", "upgrade-game-server"])
 async def game_upgrade(ctx, server_id:int, plan_id:int):
     server=_get_owned_game_server(str(ctx.author.id),server_id); new=get_game_plan(get_db,plan_id)
     if not server or not new: await ctx.send(embed=create_error_embed("Upgrade Failed","Server or plan not found.")); return
@@ -2534,7 +2534,7 @@ async def game_upgrade(ctx, server_id:int, plan_id:int):
         if delta: add_coins(str(ctx.author.id),delta,"game_server_upgrade_refund",f"Refund failed upgrade {server['public_id']}")
         await ctx.send(embed=create_error_embed("Upgrade Failed",f"Upgrade failed and {delta:,} HX Coins were refunded.\n{str(exc)[:700]}"))
 
-@bot.command(name="game-rename")
+@bot.command(name="game-rename", aliases=["rename-game", "rename-game-server"])
 async def game_rename(ctx, server_id:int, *, name:str):
     server=_get_owned_game_server(str(ctx.author.id),server_id)
     if not server or not name.strip(): await ctx.send(embed=create_error_embed("Rename Failed","Server not found or invalid name.")); return
@@ -2544,7 +2544,7 @@ async def game_rename(ctx, server_id:int, *, name:str):
         await ctx.send(embed=create_success_embed("Server Renamed",f"Server is now {name.strip()}."))
     except Exception as exc: await ctx.send(embed=create_error_embed("Rename Failed",str(exc)[:800]))
 
-@bot.command(name="game-admin-suspend")
+@bot.command(name="game-admin-suspend", aliases=["suspend-game", "suspend-game-server"])
 @is_admin()
 async def game_admin_suspend(ctx, server_id:int):
     conn=get_db(); row=conn.execute("SELECT * FROM game_servers WHERE id=?",(server_id,)).fetchone(); conn.close()
@@ -2555,7 +2555,7 @@ async def game_admin_suspend(ctx, server_id:int):
         await ctx.send(embed=create_success_embed("Server Suspended",f"{row['public_id']} suspended."))
     except Exception as exc: await ctx.send(embed=create_error_embed("Suspend Failed",str(exc)[:800]))
 
-@bot.command(name="game-admin-unsuspend")
+@bot.command(name="game-admin-unsuspend", aliases=["unsuspend-game", "unsuspend-game-server"])
 @is_admin()
 async def game_admin_unsuspend(ctx, server_id:int):
     conn=get_db(); row=conn.execute("SELECT * FROM game_servers WHERE id=?",(server_id,)).fetchone(); conn.close()
@@ -2566,7 +2566,7 @@ async def game_admin_unsuspend(ctx, server_id:int):
         await ctx.send(embed=create_success_embed("Server Unsuspended",f"{row['public_id']} is active again."))
     except Exception as exc: await ctx.send(embed=create_error_embed("Unsuspend Failed",str(exc)[:800]))
 
-@bot.command(name="game-admin-delete")
+@bot.command(name="game-admin-delete", aliases=["delete-game-server", "force-delete-game"])
 @is_admin()
 async def game_admin_delete(ctx, server_id:int):
     conn=get_db(); row=conn.execute("SELECT * FROM game_servers WHERE id=?",(server_id,)).fetchone(); conn.close()
@@ -2577,7 +2577,7 @@ async def game_admin_delete(ctx, server_id:int):
         await ctx.send(embed=create_success_embed("Game Server Deleted",f"{row['public_id']} force-deleted."))
     except Exception as exc: await ctx.send(embed=create_error_embed("Delete Failed",str(exc)[:800]))
 
-@bot.command(name="game-plan-list")
+@bot.command(name="game-plan-list", aliases=["list-game-plans", "game-plans-admin"])
 @is_admin()
 async def game_plan_list(ctx):
     plans=get_game_plans(get_db,active_only=False)
@@ -2589,7 +2589,7 @@ async def game_plan_list(ctx):
         add_field(embed,f"{p.icon} {p.name} • #{p.id}",f"Category: {p.category}\n{p.ram_mb}MB RAM • {p.cpu_percent}% CPU • {p.disk_mb}MB Disk\n{p.cost_coins:,} HX Coins / {p.duration_days}d\nStatus: {state}",False)
     await ctx.send(embed=embed)
 
-@bot.command(name="game-category-edit")
+@bot.command(name="game-category-edit", aliases=["edit-game-category", "update-game-category"])
 @is_admin()
 async def game_category_edit(ctx, category_id:int, field:str, *, value:str):
     if field not in {"name","description","icon","active"}:
@@ -2605,7 +2605,7 @@ async def game_category_edit(ctx, category_id:int, field:str, *, value:str):
         conn.close(); await ctx.send(embed=create_error_embed("Update Failed","That category name is already in use.")); return
     await ctx.send(embed=create_success_embed("Category Updated",f"Category #{category_id} updated: {field} -> {value}"))
 
-@bot.command(name="game-category-delete")
+@bot.command(name="game-category-delete", aliases=["delete-game-category", "remove-game-category"])
 @is_admin()
 async def game_category_delete(ctx, category_id:int):
     conn=get_db(); row=conn.execute("SELECT name FROM game_categories WHERE id=?",(category_id,)).fetchone()
@@ -2616,7 +2616,7 @@ async def game_category_delete(ctx, category_id:int):
     conn.execute("DELETE FROM game_categories WHERE id=?",(category_id,)); conn.commit(); conn.close()
     await ctx.send(embed=create_success_embed("Category Deleted",f"Category #{category_id} was removed."))
 
-@bot.command(name="game-nodes")
+@bot.command(name="game-nodes", aliases=["ptero-nodes", "pterodactyl-nodes"])
 @is_admin()
 async def game_nodes(ctx):
     try:
@@ -2629,7 +2629,7 @@ async def game_nodes(ctx):
         add_field(embed,f"{EMOJI_GAME_NODE} {n.get('name','Unknown')} • #{n.get('id','?')}",f"FQDN: {n.get('fqdn','-')}\nMemory: {alloc.get('memory','-')} MB\nDisk: {alloc.get('disk','-')} MB",False)
     await ctx.send(embed=embed)
 
-@bot.command(name="game-allocations")
+@bot.command(name="game-allocations", aliases=["game-node-allocations", "ptero-allocations"])
 @is_admin()
 async def game_allocations(ctx, node_id:int):
     try:
@@ -10142,6 +10142,30 @@ class HelpView(discord.ui.View):
                     (f"{PREFIX}delete-coupon <id>", "Delete coupon permanently (Admin only)")
                 ]
             },
+            "games": {
+                "name": "🎮 Game Server Management",
+                "commands": [
+                    (f"{PREFIX}game", "Browse game-server categories and plans"),
+                    (f"{PREFIX}game-plans", "View available game-server plans"),
+                    (f"{PREFIX}game-manage", "List and manage your game servers"),
+                    (f"{PREFIX}game-control <server_id>", "Open game-server control panel"),
+                    (f"{PREFIX}game-upgrade <server_id> <plan_id>", "Upgrade game-server resources with HX Coins"),
+                    (f"{PREFIX}game-rename <server_id> <name>", "Rename your game server"),
+                    (f"{PREFIX}game-plan-list", "List all game plans (Admin only)"),
+                    (f"{PREFIX}create-game-plan <name> <category> <ram_mb> <cpu_percent> <disk_mb> <days> <cost> <node_id> <nest_id> <egg_id> [allocation_id] [icon]", "Create a game-server plan (Admin only)"),
+                    (f"{PREFIX}edit-game-plan <id> <field> <value>", "Edit a game-server plan (Admin only)"),
+                    (f"{PREFIX}delete-game-plan <id>", "Delete a game-server plan (Admin only)"),
+                    (f"{PREFIX}create-game-category <name> [icon] [description]", "Create a game category (Admin only)"),
+                    (f"{PREFIX}edit-game-category <id> <field> <value>", "Edit a game category (Admin only)"),
+                    (f"{PREFIX}delete-game-category <id>", "Delete a game category (Admin only)"),
+                    (f"{PREFIX}game-nodes", "List Pterodactyl nodes (Admin only)"),
+                    (f"{PREFIX}game-allocations <node_id>", "List node allocations (Admin only)"),
+                    (f"{PREFIX}game-admin-suspend <server_id>", "Suspend a game server (Admin only)"),
+                    (f"{PREFIX}game-admin-unsuspend <server_id>", "Unsuspend a game server (Admin only)"),
+                    (f"{PREFIX}game-admin-delete <server_id>", "Force-delete a game server (Admin only)")
+                ],
+                "admin_only": True
+            },
             "vps": {
                 "name": "🖥️ VPS Management",
                 "commands": [
@@ -10247,7 +10271,7 @@ class HelpView(discord.ui.View):
         # Add all categories that user has access to
         options = []
         # Always show basic categories
-        basic_categories = ["user", "coins", "plans", "coupons", "vps", "ports", "system", "bot"]
+        basic_categories = ["user", "coins", "plans", "coupons", "vps", "games", "ports", "system", "bot"]
         for category in basic_categories:
             options.append(discord.SelectOption(
                 label=self.command_categories[category]["name"],
@@ -10352,6 +10376,7 @@ class HelpView(discord.ui.View):
             "plans": "Tip: Start with a cheaper plan and upgrade later as you need more resources!",
             "coupons": "Tip: Redeem coupon codes with `!redeem <code>` to get free coins!",
             "vps": "Tip: Snapshots are useful before making major changes to your VPS.",
+            "games": "Tip: Use `!game` to browse plans, then manage deployed servers from `!game-manage`.",
             "ports": "Tip: Port forwards work for both TCP and UDP protocols.",
             "system": "Tip: Set thresholds to monitor resource usage across nodes.",
             "nodes": "Tip: Use `!node list` to see all available nodes and their status.",
@@ -10375,6 +10400,7 @@ class HelpView(discord.ui.View):
             "plans": f"{BOT_NAME} VPS Manager • Plans & Deployment • Flexible VPS Options",
             "coupons": f"{BOT_NAME} VPS Manager • Coupon System • Redeem Codes for Coins",
             "vps": f"{BOT_NAME} VPS Manager • VPS Management • Snapshots • Cloning",
+            "games": f"{BOT_NAME} • Game Server Management • Pterodactyl",
             "ports": f"{BOT_NAME} VPS Manager • Port Forwarding • TCP/UDP Support",
             "system": f"{BOT_NAME} VPS Manager • System Monitoring • Resource Management",
             "nodes": f"{BOT_NAME} VPS Manager • Multi-Node Management • Distributed Infrastructure",
