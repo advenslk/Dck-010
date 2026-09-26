@@ -3903,7 +3903,8 @@ async def deploy_vps(ctx, plan_id: int = None):
         return
 
     # Check if user already has a VPS
-    vps_list = vps_data.get(user_id, [])    if len(vps_list) >= 1:
+    vps_list = vps_data.get(user_id, [])
+    if len(vps_list) >= 1:
         await ctx.send(embed=create_error_embed("❌ VPS Limit Reached", 
             f"You already have **{len(vps_list)} VPS**!\n\n"
             f"**Limit:** 1 VPS per user\n"
