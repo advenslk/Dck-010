@@ -20,6 +20,7 @@ from emoji import (
     EMOJI_REINSTALL, EMOJI_START, EMOJI_STOP, EMOJI_SSH, EMOJI_STATS,
 )
 from security import SecurityPolicy, evaluate_vps_request
+from abuse_monitor import AbusePolicy, evaluate_usage, parse_docker_stats, warning_level
 
 # Load environment variables from .env file
 load_dotenv()
@@ -180,6 +181,15 @@ def init_db():
         ('vps_deploy_cooldown_hours', '24'),
         ('vps_deploy_attempt_limit', '3'),
         ('vps_deploy_attempt_window_minutes', '60'),
+        ('vps_monitor_enabled', '1'),
+        ('vps_monitor_cpu_warn_percent', '95'),
+        ('vps_monitor_memory_warn_percent', '95'),
+        ('vps_monitor_pids_warn_percent', '90'),
+        ('vps_monitor_hard_cpu_percent', '98'),
+        ('vps_monitor_hard_memory_percent', '98'),
+        ('vps_monitor_violation_samples', '5'),
+        ('vps_monitor_interval_seconds', '60'),
+        ('vps_auto_suspend', '1'),
     ]
     for key, value in settings_init:
         cur.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', (key, value))
@@ -9920,6 +9930,193 @@ async def info_alias(ctx, user: discord.Member = None):
             await ctx.send(embed=create_error_embed("Usage", f"Please specify a user: `{PREFIX}info @user`"))
     else:
         await ctx.send(embed=create_error_embed("Access Denied", "This command requires admin privileges."))
+# ============================================
+# VPS ABUSE MONITOR
+# ============================================
+
+_abuse_monitor_task = None
+_abuse_violation_counts = {}
+
+def _get_security_setting(key: str, default: str) -> str:
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        conn.close()
+        return str(row[0]) if row else default
+    except Exception:
+        return default
+
+def _abuse_policy() -> AbusePolicy:
+    return AbusePolicy(
+        cpu_warn_percent=float(_get_security_setting("vps_monitor_cpu_warn_percent", "95")),
+        memory_warn_percent=float(_get_security_setting("vps_monitor_memory_warn_percent", "95")),
+        pids_warn_percent=float(_get_security_setting("vps_monitor_pids_warn_percent", "90")),
+        hard_cpu_percent=float(_get_security_setting("vps_monitor_hard_cpu_percent", "98")),
+        hard_memory_percent=float(_get_security_setting("vps_monitor_hard_memory_percent", "98")),
+        violation_samples=int(_get_security_setting("vps_monitor_violation_samples", "5")),
+    )
+
+def _get_monitor_vps():
+    try:
+        conn = get_db()
+        rows = conn.execute(
+            """SELECT id, user_id, node_id, container_name, ram, cpu, storage,
+                      status, suspended, whitelisted
+               FROM vps
+               WHERE LOWER(status) IN ('running', 'started')
+                 AND COALESCE(suspended, 0) = 0
+                 AND COALESCE(whitelisted, 0) = 0"""
+        ).fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Abuse monitor database error: {e}")
+        return []
+
+async def _get_container_usage(vps):
+    try:
+        node_id = int(vps.get("node_id") or 1)
+        result = await execute_lxc(
+            vps["container_name"],
+            f"stats --no-stream --format '{{{{.CPUPerc}}}}|{{{{.MemPerc}}}}|{{{{.PIDs}}}}' {shlex.quote(vps['container_name'])}",
+            node_id=node_id,
+        )
+        return parse_docker_stats(str(result).strip().splitlines()[-1])
+    except Exception as e:
+        logger.warning(f"Abuse monitor stats failed for {vps.get('container_name')}: {e}")
+        return None
+
+async def _auto_suspend_abusive_vps(vps, reason: str, usage):
+    container = vps["container_name"]
+    user_id = str(vps["user_id"])
+    try:
+        await execute_lxc(container, f"stop {container}", node_id=int(vps.get("node_id") or 1))
+
+        conn = get_db()
+        row = conn.execute("SELECT suspension_history FROM vps WHERE id = ?", (vps["id"],)).fetchone()
+        history = []
+        if row and row[0]:
+            try:
+                history = json.loads(row[0])
+            except (TypeError, ValueError):
+                history = []
+        history.append({
+            "time": datetime.now(timezone.utc).isoformat(),
+            "reason": f"Automatic abuse protection: {reason}",
+            "by": "HelzerX Abuse Monitor",
+        })
+        conn.execute(
+            """UPDATE vps
+               SET status = 'stopped', suspended = 1, suspension_history = ?
+               WHERE id = ?""",
+            (json.dumps(history), vps["id"]),
+        )
+        conn.commit()
+        conn.close()
+
+        _abuse_violation_counts.pop(container, None)
+        log_security_event(
+            user_id,
+            "runtime_abuse_auto_suspend",
+            f"VPS {container} automatically suspended: {reason}",
+            severity="critical",
+            additional_data=json.dumps({
+                "container": container,
+                "cpu_percent": usage.cpu_percent,
+                "memory_percent": usage.memory_percent,
+                "pids": usage.pids,
+            }),
+        )
+        update_trust_score(user_id, -20, f"Automatic VPS abuse suspension: {reason}")
+
+        try:
+            owner = await bot.fetch_user(int(user_id))
+            await owner.send(
+                embed=create_warning_embed(
+                    "VPS Suspended by Abuse Protection",
+                    f"Your VPS {container} was automatically suspended because sustained resource usage exceeded the safety limits.\n\n"
+                    f"Reason: {reason}\n\n"
+                    "If this was caused by a legitimate workload, contact an administrator for review."
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify VPS owner {user_id}: {e}")
+
+        await notify_admins_security(
+            "Automatic VPS Suspension",
+            f"VPS {container} was automatically suspended by the runtime abuse monitor.\n\n"
+            f"Reason: {reason}\n"
+            f"CPU: {usage.cpu_percent:.1f}%\n"
+            f"Memory: {usage.memory_percent:.1f}%\n"
+            f"PIDs: {usage.pids}",
+            user_id=user_id,
+        )
+    except Exception as e:
+        logger.error(f"Automatic suspension failed for {container}: {e}")
+        log_security_event(
+            user_id,
+            "runtime_abuse_suspend_failure",
+            f"Failed to auto-suspend VPS {container}: {e}",
+            severity="high",
+        )
+
+async def _run_abuse_monitor_once():
+    if _get_security_setting("vps_monitor_enabled", "1") != "1":
+        return
+
+    policy = _abuse_policy()
+    pids_limit = get_container_runtime_limits()["pids_limit"]
+
+    for vps in _get_monitor_vps():
+        container = vps["container_name"]
+        usage = await _get_container_usage(vps)
+        if usage is None:
+            continue
+
+        level = warning_level(usage, pids_limit=pids_limit, policy=policy)
+        if level == "normal":
+            _abuse_violation_counts.pop(container, None)
+            continue
+
+        count = _abuse_violation_counts.get(container, 0) + 1
+        _abuse_violation_counts[container] = count
+
+        log_security_event(
+            str(vps["user_id"]),
+            "runtime_abuse_warning",
+            f"VPS {container} usage level={level}; CPU={usage.cpu_percent:.1f}%, memory={usage.memory_percent:.1f}%, PIDs={usage.pids}, sample={count}",
+            severity="low",
+        )
+
+        decision = evaluate_usage(
+            usage,
+            pids_limit=pids_limit,
+            consecutive_violations=count,
+            policy=policy,
+        )
+        if decision.violated and _get_security_setting("vps_auto_suspend", "1") == "1":
+            await _auto_suspend_abusive_vps(vps, decision.reason, usage)
+
+async def _abuse_monitor_loop():
+    interval = max(30, int(_get_security_setting("vps_monitor_interval_seconds", "60")))
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            await _run_abuse_monitor_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Abuse monitor error: {e}")
+        await asyncio.sleep(interval)
+
+async def _start_abuse_monitor():
+    global _abuse_monitor_task
+    if _abuse_monitor_task is None or _abuse_monitor_task.done():
+        _abuse_monitor_task = asyncio.create_task(_abuse_monitor_loop())
+        logger.info("HelzerX VPS abuse monitor started")
+
+bot.add_listener(_start_abuse_monitor, "on_ready")
+
 # Run the bot
 # Components V2 compatibility layer: transparently replace legacy embeds with V2 containers.
 def _install_components_v2_compat():
