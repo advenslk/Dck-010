@@ -22,7 +22,7 @@ from emoji import (
     EMOJI_GAME, EMOJI_MINECRAFT, EMOJI_BEDROCK, EMOJI_GAME_SERVER, EMOJI_PANEL,
     EMOJI_CONSOLE, EMOJI_BACKUP, EMOJI_NETWORK, EMOJI_FILES, EMOJI_RENEW,
     EMOJI_UPGRADE, EMOJI_DELETE, EMOJI_DEPLOY, EMOJI_GAME_NODE,
-    EMOJI_GAME_SECURITY,
+    EMOJI_GAME_SECURITY, replace_emojis,
 )
 from security import SecurityPolicy, evaluate_vps_request
 from abuse_monitor import AbusePolicy, evaluate_usage, parse_docker_stats, warning_level
@@ -10689,6 +10689,69 @@ async def _start_abuse_monitor():
 bot.add_listener(_start_abuse_monitor, "on_ready")
 
 # Run the bot
+def _localize_discord_embed(embed):
+    """Apply centralized emoji definitions to every user-visible embed string."""
+    if embed is None:
+        return
+    if getattr(embed, "title", None):
+        embed.title = replace_emojis(embed.title)
+    if getattr(embed, "description", None):
+        embed.description = replace_emojis(embed.description)
+    if getattr(embed, "url", None):
+        embed.url = replace_emojis(embed.url)
+    for index, field in enumerate(list(getattr(embed, "fields", []))):
+        embed.set_field_at(
+            index,
+            name=replace_emojis(field.name),
+            value=replace_emojis(field.value),
+            inline=field.inline,
+        )
+    footer = getattr(embed, "footer", None)
+    if footer and getattr(footer, "text", None):
+        embed.set_footer(
+            text=replace_emojis(footer.text),
+            icon_url=getattr(footer, "icon_url", None),
+        )
+    author = getattr(embed, "author", None)
+    if author and getattr(author, "name", None):
+        embed.set_author(
+            name=replace_emojis(author.name),
+            url=getattr(author, "url", None),
+            icon_url=getattr(author, "icon_url", None),
+        )
+
+
+def _localize_discord_view(view):
+    """Apply centralized emoji definitions to buttons, selects, and options."""
+    if view is None:
+        return
+    for item in getattr(view, "children", []):
+        if getattr(item, "label", None):
+            item.label = replace_emojis(item.label)
+        if getattr(item, "placeholder", None):
+            item.placeholder = replace_emojis(item.placeholder)
+        if getattr(item, "emoji", None) and isinstance(item.emoji, str):
+            item.emoji = replace_emojis(item.emoji)
+        for option in getattr(item, "options", []) or []:
+            if getattr(option, "label", None):
+                option.label = replace_emojis(option.label)
+            if getattr(option, "description", None):
+                option.description = replace_emojis(option.description)
+            if getattr(option, "emoji", None) and isinstance(option.emoji, str):
+                option.emoji = replace_emojis(option.emoji)
+
+
+def _localize_discord_payload(content=None, embed=None, embeds=None, view=None):
+    """Centralize all Discord-facing emoji rendering in one place."""
+    content = replace_emojis(content) if isinstance(content, str) else content
+    if embed is not None:
+        _localize_discord_embed(embed)
+    for item in embeds or []:
+        _localize_discord_embed(item)
+    _localize_discord_view(view)
+    return content
+
+
 # Components V2 compatibility layer: transparently replace legacy embeds with V2 containers.
 def _install_components_v2_compat():
     if getattr(discord, "_helzerx_v2_installed", False):
@@ -10700,6 +10763,7 @@ def _install_components_v2_compat():
         embeds = kwargs.pop("embeds", None)
         content = kwargs.get("content")
         old_view = kwargs.get("view")
+        content = _localize_discord_payload(content, embed, embeds, old_view)
         if embed is not None or embeds:
             if embeds:
                 embed = embeds[0]
@@ -10717,6 +10781,7 @@ def _install_components_v2_compat():
         embeds = kwargs.pop("embeds", None)
         content = kwargs.get("content")
         old_view = kwargs.get("view")
+        content = _localize_discord_payload(content, embed, embeds, old_view)
         if embed is not None or embeds:
             if embeds:
                 embed = embeds[0]
@@ -10730,6 +10795,7 @@ def _install_components_v2_compat():
         embed = kwargs.pop("embed", None)
         embeds = kwargs.pop("embeds", None)
         old_view = kwargs.get("view")
+        content = _localize_discord_payload(content, embed, embeds, old_view)
         if embed is not None or embeds:
             if embeds:
                 embed = embeds[0]
@@ -10743,6 +10809,7 @@ def _install_components_v2_compat():
         embed = kwargs.pop("embed", None)
         embeds = kwargs.pop("embeds", None)
         old_view = kwargs.get("view")
+        content = _localize_discord_payload(content, embed, embeds, old_view)
         if embed is not None or embeds:
             if embeds:
                 embed = embeds[0]
@@ -10759,6 +10826,7 @@ def _install_components_v2_compat():
         embeds = kwargs.pop("embeds", None)
         content = kwargs.get("content")
         old_view = kwargs.get("view")
+        content = _localize_discord_payload(content, embed, embeds, old_view)
         if embed is not None or embeds:
             if embeds:
                 embed = embeds[0]
@@ -10773,6 +10841,7 @@ def _install_components_v2_compat():
         embeds = kwargs.pop("embeds", None)
         content = kwargs.get("content")
         old_view = kwargs.get("view")
+        content = _localize_discord_payload(content, embed, embeds, old_view)
         if embed is not None or embeds:
             if embeds:
                 embed = embeds[0]
