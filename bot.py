@@ -21,6 +21,7 @@ from emoji import (
 )
 from security import SecurityPolicy, evaluate_vps_request
 from abuse_monitor import AbusePolicy, evaluate_usage, parse_docker_stats, warning_level
+from pterodactyl import (PterodactylClient, PterodactylError, GameServerPlan, init_pterodactyl_db, get_game_categories, get_game_plans, get_game_plan, save_game_plan, delete_game_plan, get_panel_account, save_panel_account, save_game_server, get_user_game_servers)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1816,6 +1817,7 @@ def work_for_coins(user_id: str):
 
 # Initialize database
 init_db()
+init_pterodactyl_db(get_db)
 
 # Load data at startup
 vps_data = get_vps_data()
@@ -2150,6 +2152,285 @@ def is_main_admin():
             return True
         raise commands.CheckFailure("Only the main admin can use this command.")
     return commands.check(predicate)
+
+# ============================================
+# PTERODACTYL / GAME SERVER SYSTEM
+# ============================================
+def _ptero_client() -> PterodactylClient:
+    return PterodactylClient()
+
+def _panel_url() -> str:
+    return os.getenv("PTERODACTYL_URL", "").rstrip("/")
+
+def _panel_email(user_id: str) -> str:
+    domain = os.getenv("PANEL_EMAIL_DOMAIN", "panel.local").strip() or "panel.local"
+    return f"discord_{user_id}@{domain}"
+
+def _panel_username(user_id: str) -> str:
+    return f"hx_{user_id}"[:32]
+
+class GameCategoryView(discord.ui.View):
+    def __init__(self, ctx):
+        super().__init__(timeout=300)
+        self.ctx = ctx
+        self.categories = get_game_categories(get_db)
+        options = [discord.SelectOption(label=x["name"][:100], value=str(x["id"]), emoji=x.get("icon") or "🎮", description=(x.get("description") or "")[:100]) for x in self.categories[:25]]
+        self.select = discord.ui.Select(placeholder="Select a game category", options=options or [discord.SelectOption(label="No categories", value="none")])
+        self.select.callback = self.select_category
+        self.add_item(self.select)
+
+    async def select_category(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            return
+        value = interaction.data["values"][0]
+        if value == "none":
+            await interaction.response.send_message("No game categories are configured yet.", ephemeral=True)
+            return
+        category = next((x for x in self.categories if str(x["id"]) == value), None)
+        if not category:
+            await interaction.response.send_message("Category not found.", ephemeral=True)
+            return
+        plans = get_game_plans(get_db, category["name"])
+        view = GamePlanView(self.ctx, category, plans)
+        await interaction.response.edit_message(embed=create_info_embed(f"{category['icon']} {category['name']}", "Select a plan below to continue."), view=view)
+
+class GamePlanView(discord.ui.View):
+    def __init__(self, ctx, category, plans):
+        super().__init__(timeout=300)
+        self.ctx = ctx
+        self.category = category
+        self.plans = plans
+        options = [discord.SelectOption(label=f"{p.icon} {p.name}"[:100], value=str(p.id), description=f"{p.ram_mb//1024:g}GB RAM • {p.cpu_percent}% CPU • {p.disk_mb//1024:g}GB • {p.cost_coins:,} HX Coins"[:100]) for p in plans[:25]]
+        self.select = discord.ui.Select(placeholder="Select a plan", options=options or [discord.SelectOption(label="No active plans", value="none")])
+        self.select.callback = self.select_plan
+        self.add_item(self.select)
+        self.create_button = discord.ui.Button(label="Create Server", emoji="🚀", style=discord.ButtonStyle.success, disabled=not bool(plans))
+        self.create_button.callback = self.create_server
+        self.add_item(self.create_button)
+        self.back_button = discord.ui.Button(label="Categories", emoji="↩️", style=discord.ButtonStyle.secondary)
+        self.back_button.callback = self.back
+        self.add_item(self.back_button)
+        self.selected_plan_id = None
+
+    async def select_plan(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            return
+        self.selected_plan_id = int(interaction.data["values"][0])
+        plan = get_game_plan(get_db, self.selected_plan_id)
+        if not plan:
+            await interaction.response.send_message("Plan not found.", ephemeral=True)
+            return
+        self.create_button.label = f"Create {plan.name}"
+        embed = create_info_embed(f"{plan.icon} {plan.name}", plan.description or "Game server plan")
+        add_field(embed, "Resources", f"RAM: {plan.ram_mb/1024:g} GB\nCPU: {plan.cpu_percent}%\nDisk: {plan.disk_mb/1024:g} GB", True)
+        add_field(embed, "Billing", f"{plan.cost_coins:,} HX Coins\n{plan.duration_days} day(s)", True)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def back(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            return
+        await interaction.response.edit_message(embed=create_info_embed("Game Servers", "Select a category."), view=GameCategoryView(self.ctx))
+
+    async def create_server(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            return
+        if not self.selected_plan_id:
+            await interaction.response.send_message("Select a plan first.", ephemeral=True)
+            return
+        await interaction.response.send_modal(GameServerNameModal(self.selected_plan_id))
+
+class GameServerNameModal(discord.ui.Modal, title="Create Game Server"):
+    server_name = discord.ui.TextInput(label="Server Name", placeholder="My Survival Server", min_length=2, max_length=40)
+    def __init__(self, plan_id):
+        super().__init__()
+        self.plan_id = plan_id
+
+    async def on_submit(self, interaction):
+        plan = get_game_plan(get_db, self.plan_id)
+        if not plan:
+            await interaction.response.send_message("That plan is no longer available.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        user_id = str(interaction.user.id)
+        ok, balance = remove_coins(user_id, plan.cost_coins, "game_server_create", f"Game server plan #{plan.id}")
+        if not ok:
+            await interaction.followup.send(f"Insufficient HX Coins. Required: {plan.cost_coins:,} • Balance: {balance:,}", ephemeral=True)
+            return
+        try:
+            client = _ptero_client()
+            username = _panel_username(user_id)
+            email = _panel_email(user_id)
+            account = get_panel_account(get_db, user_id)
+            if account:
+                panel_user = {"id": account["panel_user_id"], "username": account["username"], "email": account["email"]}
+            else:
+                panel_user = await run_in_executor(client.ensure_user, username, email)
+                save_panel_account(get_db, user_id, int(panel_user["id"]), panel_user.get("username", username), panel_user.get("email", email))
+            public_id = f"HX-GS-{random.randint(10000,99999)}"
+            expires_at = (datetime.now(timezone.utc) + timedelta(days=plan.duration_days)).isoformat()
+            panel_server = await run_in_executor(client.create_server, plan, str(self.server_name), int(panel_user["id"]), public_id)
+            save_game_server(get_db, user_id, int(panel_user["id"]), panel_server, plan, public_id, expires_at)
+            identifier = panel_server.get("identifier", "")
+            panel_link = f"{_panel_url()}/server/{identifier}" if identifier and _panel_url() else _panel_url()
+            embed = create_success_embed("Game Server Created", f"{str(self.server_name)} is being provisioned.\n\nID: {public_id}\nPlan: {plan.icon} {plan.name}\nExpires: <t:{int(datetime.fromisoformat(expires_at).timestamp())}:R>")
+            view = discord.ui.View(timeout=300)
+            if panel_link:
+                view.add_item(discord.ui.Button(label="Open Panel", emoji="🌐", style=discord.ButtonStyle.link, url=panel_link))
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception as exc:
+            add_coins(user_id, plan.cost_coins, "game_server_refund", f"Refund for failed game server deployment: {plan.name}")
+            logger.exception("Game server deployment failed")
+            await interaction.followup.send(f"Server creation failed, so your {plan.cost_coins:,} HX Coins were refunded.\n\n{str(exc)[:500]}", ephemeral=True)
+
+class GameServerManageView(discord.ui.View):
+    def __init__(self, ctx, servers):
+        super().__init__(timeout=300)
+        self.ctx = ctx
+        self.servers = servers
+        options = [discord.SelectOption(label=f"{s['name']}"[:100], value=str(s["id"]), description=f"{s['public_id']} • {s['category']}"[:100]) for s in servers[:25]]
+        self.select = discord.ui.Select(placeholder="Select a game server", options=options or [discord.SelectOption(label="No servers", value="none")])
+        self.select.callback = self.select_server
+        self.add_item(self.select)
+
+    async def select_server(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            return
+        value = interaction.data["values"][0]
+        if value == "none":
+            await interaction.response.send_message("You do not have any game servers.", ephemeral=True)
+            return
+        server = next((x for x in self.servers if str(x["id"]) == value), None)
+        if not server:
+            await interaction.response.send_message("Server not found.", ephemeral=True)
+            return
+        try:
+            attrs = await run_in_executor(_ptero_client().get_server, int(server["panel_server_id"]))
+            identifier = attrs.get("identifier", "")
+            status = attrs.get("status", server.get("status", "unknown"))
+        except Exception:
+            identifier = ""
+            status = server.get("status", "unknown")
+        embed = create_info_embed(f"🎮 {server['name']}", f"{server['public_id']}\nStatus: {status}")
+        add_field(embed, "Category", server["category"], True)
+        add_field(embed, "Expires", f"<t:{int(datetime.fromisoformat(server['expires_at']).timestamp())}:R>", True)
+        view = discord.ui.View(timeout=300)
+        if _panel_url():
+            url = f"{_panel_url()}/server/{identifier}" if identifier else _panel_url()
+            view.add_item(discord.ui.Button(label="Open Panel", emoji="🌐", style=discord.ButtonStyle.link, url=url))
+        await interaction.response.edit_message(embed=embed, view=view)
+
+@bot.command(name="panel", aliases=["panel-account", "game-account"])
+async def panel_account(ctx):
+    try:
+        user_id = str(ctx.author.id)
+        account = get_panel_account(get_db, user_id)
+        if not account:
+            client = _ptero_client()
+            username = _panel_username(user_id)
+            email = _panel_email(user_id)
+            panel_user = await run_in_executor(client.ensure_user, username, email)
+            save_panel_account(get_db, user_id, int(panel_user["id"]), panel_user.get("username", username), panel_user.get("email", email))
+            account = get_panel_account(get_db, user_id)
+        embed = create_success_embed("Pterodactyl Account", "Your HelzerX game-server panel account is ready.")
+        add_field(embed, "Username", account["username"], True)
+        add_field(embed, "Email", account["email"], True)
+        view = discord.ui.View(timeout=300)
+        if _panel_url():
+            view.add_item(discord.ui.Button(label="Open Panel", emoji="🌐", style=discord.ButtonStyle.link, url=_panel_url()))
+        await ctx.send(embed=embed, view=view)
+    except Exception as exc:
+        await ctx.send(embed=create_error_embed("Panel Account Failed", str(exc)[:1000]))
+
+@bot.command(name="game", aliases=["game-server", "create-game"])
+async def game_server(ctx):
+    await ctx.send(embed=create_info_embed("🎮 Game Servers", "Choose a game category to view available plans."), view=GameCategoryView(ctx))
+
+@bot.command(name="game-manage", aliases=["games", "game-servers"])
+async def game_manage(ctx):
+    servers = get_user_game_servers(get_db, str(ctx.author.id))
+    if not servers:
+        await ctx.send(embed=create_error_embed("No Game Servers", f"Use {PREFIX}game to deploy your first server."))
+        return
+    await ctx.send(embed=create_info_embed("🎮 Your Game Servers", "Select a server to open its management panel."), view=GameServerManageView(ctx, servers))
+
+@bot.command(name="game-plans")
+async def game_plans(ctx):
+    categories = get_game_categories(get_db)
+    embed = create_info_embed("🎮 Game Server Plans", "Plans are grouped by game category.")
+    for category in categories:
+        plans = get_game_plans(get_db, category["name"])
+        if plans:
+            lines = [f"{p.icon} {p.name} — {p.ram_mb//1024:g}GB RAM • {p.cpu_percent}% CPU • {p.disk_mb//1024:g}GB • {p.cost_coins:,} coins / {p.duration_days}d" for p in plans[:10]]
+            add_field(embed, f"{category['icon']} {category['name']}", "\n".join(lines), False)
+    await ctx.send(embed=embed)
+
+@bot.command(name="game-category-create")
+@is_admin()
+async def game_category_create(ctx, name: str, icon: str = "🎮", *, description: str = ""):
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO game_categories (name, description, icon, created_at) VALUES (?, ?, ?, datetime('now'))", (name, description, icon))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        await ctx.send(embed=create_error_embed("Category Exists", f"{name} already exists."))
+        return
+    conn.close()
+    await ctx.send(embed=create_success_embed("Game Category Created", f"{icon} {name} is ready for plans."))
+
+@bot.command(name="game-plan-create")
+@is_admin()
+async def game_plan_create(ctx, name: str, category: str, ram_mb: int, cpu_percent: int, disk_mb: int, days: int, cost: int, node_id: int, nest_id: int, egg_id: int, allocation_id: int = 0, icon: str = "🎮"):
+    if min(ram_mb, cpu_percent, disk_mb, days, cost, node_id, nest_id, egg_id) <= 0:
+        await ctx.send(embed=create_error_embed("Invalid Plan", "Resources, duration, price, node, nest and egg IDs must be positive."))
+        return
+    categories = get_game_categories(get_db, active_only=False)
+    category_row = next((x for x in categories if x["name"].lower() == category.lower()), None)
+    if not category_row:
+        await ctx.send(embed=create_error_embed("Category Not Found", f"Create {category} first with {PREFIX}game-category-create."))
+        return
+    if any(p.name.lower() == name.lower() for p in get_game_plans(get_db, category_row["name"], active_only=False)):
+        await ctx.send(embed=create_error_embed("Plan Exists", f"{name} already exists."))
+        return
+    plan_id = save_game_plan(get_db, {"name":name,"category":category_row["name"],"description":f"{ram_mb//1024:g}GB RAM • {cpu_percent}% CPU • {disk_mb//1024:g}GB Disk","ram_mb":ram_mb,"cpu_percent":cpu_percent,"disk_mb":disk_mb,"duration_days":days,"cost_coins":cost,"node_id":node_id,"nest_id":nest_id,"egg_id":egg_id,"allocation_id":allocation_id,"icon":icon})
+    await ctx.send(embed=create_success_embed("Game Plan Created", f"ID: {plan_id}\n{icon} {name}\nCategory: {category_row['name']}\nUse {PREFIX}game-plan-edit {plan_id} <field> <value> for changes."))
+
+@bot.command(name="game-plan-edit")
+@is_admin()
+async def game_plan_edit(ctx, plan_id: int, field: str, *, value: str):
+    allowed = {"name","category","description","ram_mb","cpu_percent","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id","docker_image","startup","environment","active","icon"}
+    if field not in allowed:
+        await ctx.send(embed=create_error_embed("Invalid Field", f"Allowed: {', '.join(sorted(allowed))}"))
+        return
+    plan = get_game_plan(get_db, plan_id)
+    if not plan:
+        await ctx.send(embed=create_error_embed("Plan Not Found", f"Game plan #{plan_id} does not exist."))
+        return
+    raw = {k:getattr(plan,k) for k in GameServerPlan.__dataclass_fields__}
+    raw[field] = value
+    if field in {"ram_mb","cpu_percent","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id"}:
+        raw[field] = int(value)
+    if field == "active":
+        raw[field] = 1 if value.lower() in {"1","true","yes","on","active"} else 0
+    if field == "environment":
+        raw[field] = json.loads(value)
+    raw["environment"] = raw.get("environment", {})
+    save_game_plan(get_db, raw, plan_id=plan_id)
+    await ctx.send(embed=create_success_embed("Game Plan Updated", f"Plan {plan_id} updated: {field} → {value}"))
+
+@bot.command(name="game-plan-delete")
+@is_admin()
+async def game_plan_delete(ctx, plan_id: int):
+    if delete_game_plan(get_db, plan_id):
+        await ctx.send(embed=create_success_embed("Game Plan Deleted", f"Game plan {plan_id} was removed."))
+    else:
+        await ctx.send(embed=create_error_embed("Plan Not Found", f"Game plan {plan_id} does not exist."))
+
 
 # Docker container command execution with multi-node support
 async def execute_lxc(container_name: str, command: str, timeout=120, node_id: Optional[int] = None):
