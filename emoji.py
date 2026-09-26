@@ -1,4 +1,9 @@
-"""Centralized emoji definitions for HelzerX VPS UI."""
+"""Centralized emoji definitions for the HelzerX VPS and game-server UI.
+
+All emoji values used by bot.py are registered here.  Discord-facing strings are
+also passed through replace_emojis() so custom server emojis can be used without
+scattering emoji definitions throughout the bot.
+"""
 
 # General VPS UI
 EMOJI_REINSTALL = "<:Reinatall:1553286784635379754>"
@@ -39,3 +44,213 @@ EMOJI_GAME_CATEGORY = "<:Category:1553296788855726101>"
 EMOJI_GAME_NODE = "<:Node:1553296865263493200>"
 EMOJI_GAME_ALLOCATION = "<:Allocations:1553296960608276511>"
 EMOJI_GAME_SECURITY = "<:Security:1553297976309452890>"
+
+# Every Unicode emoji sequence currently present in bot.py.
+# These remain Unicode until a matching custom Discord emoji is supplied.
+EMOJI_PACKAGE = "📦"
+EMOJI_LIGHTNING = "⚡"
+EMOJI_SEEDLING = "🌱"
+EMOJI_GEAR = "⚙️"
+EMOJI_ROCKET = "🚀"
+EMOJI_GEM = "💎"
+EMOJI_BLUE_DIAMOND = "🔹"
+EMOJI_ORANGE_DIAMOND = "🔸"
+EMOJI_FIRE = "🔥"
+EMOJI_DIZZY = "💫"
+EMOJI_TROPHY = "🏆"
+EMOJI_SHOP = "🛒"
+EMOJI_TARGET = "🎯"
+EMOJI_SPEECH = "💬"
+EMOJI_MIC = "🎤"
+EMOJI_USERS = "👥"
+EMOJI_MONEY_BAG = "💰"
+EMOJI_STAR = "⭐"
+EMOJI_DESKTOP = "🖥️"
+EMOJI_SCROLL = "📜"
+EMOJI_GIFT = "🎁"
+EMOJI_HAMMER = "⚒️"
+EMOJI_ART = "🎨"
+EMOJI_CROWN = "👑"
+EMOJI_INFINITY = "♾️"
+EMOJI_CROSS = "❌"
+EMOJI_CHECK = "✅"
+EMOJI_WARNING = "⚠️"
+EMOJI_ALERT = "🚨"
+EMOJI_ALARM = "⏰"
+EMOJI_PARTY = "🎉"
+EMOJI_CHECK_MARK = "✓"
+EMOJI_MULTIPLY_X = "✕"
+EMOJI_BLACK_STAR = "★"
+EMOJI_GREEN = "🟢"
+EMOJI_RED = "🔴"
+EMOJI_GLOBE = "🌐"
+EMOJI_GAME_RAW = "🎮"
+EMOJI_REFRESH = "🔄"
+EMOJI_NO_ENTRY = "⛔"
+EMOJI_LOCK = "🔒"
+EMOJI_UNLOCK = "🔓"
+EMOJI_YELLOW = "🟡"
+EMOJI_CLOCK_ONE = "🕐"
+EMOJI_CHART = "📊"
+EMOJI_BLUE = "🔵"
+EMOJI_PIN = "📍"
+EMOJI_COMPASS = "🧭"
+EMOJI_MEMO = "📝"
+EMOJI_CLIPBOARD = "📋"
+EMOJI_HOURGLASS = "⏳"
+EMOJI_BULB = "💡"
+EMOJI_STOPWATCH = "⏱️"
+EMOJI_TREND_UP = "📈"
+EMOJI_KEY = "🔑"
+EMOJI_QUESTION = "❓"
+EMOJI_ANTENNA = "📡"
+EMOJI_FILE_CABINET = "🗄️"
+EMOJI_PAUSE = "⏸️"
+EMOJI_GLOWING_STAR = "🌟"
+EMOJI_ROBOT = "🤖"
+EMOJI_FLOPPY = "💾"
+EMOJI_HOSPITAL = "🏥"
+EMOJI_BEGINNER = "🔰"
+EMOJI_SHIELD = "🛡️"
+EMOJI_USER = "👤"
+EMOJI_PUSH_PIN = "📌"
+EMOJI_PLUG = "🔌"
+EMOJI_LINK = "🔗"
+EMOJI_OUTBOX = "📤"
+EMOJI_COMPUTER = "💻"
+EMOJI_BRAIN = "🧠"
+EMOJI_TREND_DOWN = "📉"
+EMOJI_DOLLAR = "💵"
+EMOJI_GOLD = "🥇"
+EMOJI_SILVER = "🥈"
+EMOJI_BRONZE = "🥉"
+EMOJI_PLUS = "➕"
+EMOJI_MINUS = "➖"
+EMOJI_CALENDAR = "📅"
+EMOJI_CARD = "💳"
+EMOJI_WHITE = "⚪"
+EMOJI_FLAG = "🚩"
+EMOJI_PROHIBIT = "🚫"
+EMOJI_MONEY_WINGS = "💸"
+EMOJI_FOLDER = "📁"
+EMOJI_CALENDAR_TEAR = "📆"
+EMOJI_BRIEFCASE = "💼"
+EMOJI_LETTER = "💌"
+EMOJI_MEDAL = "🏅"
+EMOJI_WRENCH = "🔧"
+EMOJI_SEARCH = "🔍"
+EMOJI_TICKETS = "🎟️"
+EMOJI_BOOKS = "📚"
+EMOJI_WARNING_PLAIN = "⚠"
+EMOJI_PAUSE_PLAIN = "⏸"
+
+# Map the raw sequences from bot.py to their centralized values.
+# Known server custom emojis take precedence over their old Unicode equivalents.
+EMOJI_REPLACEMENTS = {
+    "📦": EMOJI_PACKAGE,
+    "⚡": EMOJI_LIGHTNING,
+    "🌱": EMOJI_SEEDLING,
+    "⚙️": EMOJI_GEAR,
+    "🚀": EMOJI_ROCKET,
+    "💎": EMOJI_GEM,
+    "🔹": EMOJI_BLUE_DIAMOND,
+    "🔸": EMOJI_ORANGE_DIAMOND,
+    "🔥": EMOJI_FIRE,
+    "💫": EMOJI_DIZZY,
+    "🏆": EMOJI_TROPHY,
+    "🛒": EMOJI_SHOP,
+    "🎯": EMOJI_TARGET,
+    "💬": EMOJI_SPEECH,
+    "🎤": EMOJI_MIC,
+    "👥": EMOJI_USERS,
+    "💰": EMOJI_MONEY_BAG,
+    "⭐": EMOJI_STAR,
+    "🖥️": EMOJI_DESKTOP,
+    "📜": EMOJI_SCROLL,
+    "🎁": EMOJI_GIFT,
+    "⚒️": EMOJI_HAMMER,
+    "🎨": EMOJI_ART,
+    "👑": EMOJI_CROWN,
+    "♾️": EMOJI_INFINITY,
+    "❌": EMOJI_CANCEL,
+    "✅": EMOJI_SUCCESS,
+    "⚠️": EMOJI_WARNING,
+    "🚨": EMOJI_ALERT,
+    "⏰": EMOJI_ALARM,
+    "🎉": EMOJI_PARTY,
+    "✓": EMOJI_CHECK_MARK,
+    "✕": EMOJI_MULTIPLY_X,
+    "★": EMOJI_BLACK_STAR,
+    "🟢": EMOJI_GREEN,
+    "🔴": EMOJI_RED,
+    "🎮": EMOJI_GAME,
+    "🌐": EMOJI_GLOBE,
+    "🔄": EMOJI_REINSTALL,
+    "⛔": EMOJI_NO_ENTRY,
+    "🔒": EMOJI_LOCK,
+    "🔓": EMOJI_UNLOCK,
+    "🟡": EMOJI_YELLOW,
+    "🕐": EMOJI_CLOCK_ONE,
+    "📊": EMOJI_STATS,
+    "🔵": EMOJI_BLUE,
+    "📍": EMOJI_PIN,
+    "🧭": EMOJI_COMPASS,
+    "📝": EMOJI_MEMO,
+    "📋": EMOJI_CLIPBOARD,
+    "⏳": EMOJI_HOURGLASS,
+    "💡": EMOJI_BULB,
+    "⏱️": EMOJI_EXPIRATION,
+    "📈": EMOJI_TREND_UP,
+    "🔑": EMOJI_SSH,
+    "❓": EMOJI_QUESTION,
+    "📡": EMOJI_ANTENNA,
+    "🗄️": EMOJI_FILE_CABINET,
+    "⏸️": EMOJI_STOP,
+    "🌟": EMOJI_GLOWING_STAR,
+    "🤖": EMOJI_ROBOT,
+    "💾": EMOJI_BACKUP,
+    "🏥": EMOJI_HOSPITAL,
+    "🔰": EMOJI_BEGINNER,
+    "🛡️": EMOJI_GAME_SECURITY,
+    "👤": EMOJI_USER,
+    "📌": EMOJI_PUSH_PIN,
+    "🔌": EMOJI_NETWORK,
+    "🔗": EMOJI_PANEL,
+    "📤": EMOJI_DEPLOY,
+    "💻": EMOJI_COMPUTER,
+    "🧠": EMOJI_BRAIN,
+    "📉": EMOJI_TREND_DOWN,
+    "💵": EMOJI_DOLLAR,
+    "🥇": EMOJI_GOLD,
+    "🥈": EMOJI_SILVER,
+    "🥉": EMOJI_BRONZE,
+    "➕": EMOJI_PLUS,
+    "➖": EMOJI_MINUS,
+    "📅": EMOJI_CALENDAR,
+    "💳": EMOJI_CARD,
+    "⚪": EMOJI_WHITE,
+    "🚩": EMOJI_FLAG,
+    "🚫": EMOJI_PROHIBIT,
+    "💸": EMOJI_MONEY_WINGS,
+    "📁": EMOJI_FILES,
+    "📆": EMOJI_CALENDAR_TEAR,
+    "💼": EMOJI_BRIEFCASE,
+    "💌": EMOJI_LETTER,
+    "🏅": EMOJI_MEDAL,
+    "🔧": EMOJI_WRENCH,
+    "🔍": EMOJI_SEARCH,
+    "🎟️": EMOJI_TICKETS,
+    "📚": EMOJI_BOOKS,
+    "⚠": EMOJI_WARNING,
+    "⏸": EMOJI_STOP,
+}
+
+def replace_emojis(value):
+    """Replace registered Unicode emoji sequences with centralized values."""
+    if not isinstance(value, str) or not value:
+        return value
+    result = value
+    for raw, replacement in sorted(EMOJI_REPLACEMENTS.items(), key=lambda item: len(item[0]), reverse=True):
+        if raw in result:
+            result = result.replace(raw, replacement)
+    return result
