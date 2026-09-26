@@ -282,3 +282,72 @@ def get_game_plan(get_db, plan_id: int) -> Optional[GameServerPlan]:
     row = conn.execute("SELECT * FROM game_server_plans WHERE id = ?", (plan_id,)).fetchone()
     conn.close()
     return normalize_plan(dict(row)) if row else None
+
+
+def save_game_plan(get_db, data: Dict[str, Any], plan_id: Optional[int] = None) -> int:
+    conn = get_db()
+    environment = json.dumps(data.get("environment", {}), separators=(",", ":"))
+    if plan_id:
+        fields = ["name","category","description","ram_mb","cpu_percent","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id","docker_image","startup","environment","active","icon"]
+        values = [data.get(k) for k in fields]
+        values[14] = environment
+        conn.execute("UPDATE game_server_plans SET " + ",".join(f"{f} = ?" for f in fields) + " WHERE id = ?", values + [plan_id])
+        result = plan_id
+    else:
+        conn.execute("""INSERT INTO game_server_plans
+            (name, category, description, ram_mb, cpu_percent, disk_mb, duration_days, cost_coins,
+             node_id, nest_id, egg_id, allocation_id, docker_image, startup, environment, active, icon, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            (data["name"], data["category"], data.get("description", ""), data["ram_mb"], data["cpu_percent"],
+             data["disk_mb"], data["duration_days"], data["cost_coins"], data["node_id"], data["nest_id"],
+             data["egg_id"], data.get("allocation_id", 0), data.get("docker_image", ""), data.get("startup", ""),
+             environment, int(data.get("active", 1)), data.get("icon", "🎮")))
+        result = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    conn.close()
+    return int(result)
+
+
+def delete_game_plan(get_db, plan_id: int) -> bool:
+    conn = get_db()
+    cur = conn.execute("DELETE FROM game_server_plans WHERE id = ?", (plan_id,))
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+def get_panel_account(get_db, discord_user_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_db()
+    row = conn.execute("SELECT * FROM panel_accounts WHERE discord_user_id = ?", (str(discord_user_id),)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def save_panel_account(get_db, discord_user_id: str, panel_user_id: int, username: str, email: str) -> None:
+    conn = get_db()
+    conn.execute("""INSERT INTO panel_accounts (discord_user_id, panel_user_id, username, email, created_at)
+                    VALUES (?, ?, ?, ?, datetime('now'))
+                    ON CONFLICT(discord_user_id) DO UPDATE SET panel_user_id=excluded.panel_user_id,
+                    username=excluded.username, email=excluded.email""",
+                 (str(discord_user_id), panel_user_id, username, email))
+    conn.commit()
+    conn.close()
+
+
+def save_game_server(get_db, discord_user_id: str, panel_user_id: int, panel_server: Dict[str, Any], plan: GameServerPlan, public_id: str, expires_at: str) -> int:
+    conn = get_db()
+    conn.execute("""INSERT INTO game_servers
+        (public_id, discord_user_id, panel_user_id, panel_server_id, name, category, plan_id, status, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'installing', ?, datetime('now'))""",
+        (public_id, str(discord_user_id), panel_user_id, int(panel_server["id"]), panel_server.get("name", plan.name), plan.category, plan.id, expires_at))
+    result = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    conn.close()
+    return int(result)
+
+
+def get_user_game_servers(get_db, discord_user_id: str) -> List[Dict[str, Any]]:
+    conn = get_db()
+    rows = [dict(x) for x in conn.execute("SELECT * FROM game_servers WHERE discord_user_id = ? ORDER BY created_at DESC", (str(discord_user_id),)).fetchall()]
+    conn.close()
+    return rows
