@@ -2396,8 +2396,10 @@ async def game_category_create(ctx, name: str, icon: str = "🎮", *, descriptio
 
 @bot.command(name="game-plan-create", aliases=["create-game-plan", "add-game-plan", "new-game-plan"])
 @is_admin()
-async def game_plan_create(ctx, name: str, category: str, ram_mb: int, cpu_percent: int, disk_mb: int, days: int, cost: int, node_id: int, nest_id: int, egg_id: int, allocation_id: int = 0, icon: str = "🎮"):
-    if min(ram_mb, cpu_percent, disk_mb, days, cost, node_id, nest_id, egg_id) <= 0:
+async def game_plan_create(ctx, name: str, category: str, ram_gb: int, cpu_percent: int, disk_gb: int, days: int, cost: int, node_id: int, nest_id: int, egg_id: int, allocation_id: int = 0, icon: str = "🎮"):
+    ram_mb = ram_gb * 1024
+    disk_mb = disk_gb * 1024
+    if min(ram_gb, cpu_percent, disk_gb, days, cost, node_id, nest_id, egg_id) <= 0:
         await ctx.send(embed=create_error_embed("Invalid Plan", "Resources, duration, price, node, nest and egg IDs must be positive."))
         return
     categories = get_game_categories(get_db, active_only=False)
@@ -2408,13 +2410,13 @@ async def game_plan_create(ctx, name: str, category: str, ram_mb: int, cpu_perce
     if any(p.name.lower() == name.lower() for p in get_game_plans(get_db, category_row["name"], active_only=False)):
         await ctx.send(embed=create_error_embed("Plan Exists", f"{name} already exists."))
         return
-    plan_id = save_game_plan(get_db, {"name":name,"category":category_row["name"],"description":f"{ram_mb//1024:g}GB RAM • {cpu_percent}% CPU • {disk_mb//1024:g}GB Disk","ram_mb":ram_mb,"cpu_percent":cpu_percent,"disk_mb":disk_mb,"duration_days":days,"cost_coins":cost,"node_id":node_id,"nest_id":nest_id,"egg_id":egg_id,"allocation_id":allocation_id,"icon":icon})
-    await ctx.send(embed=create_success_embed("Game Plan Created", f"ID: {plan_id}\n{icon} {name}\nCategory: {category_row['name']}\nUse {PREFIX}game-plan-edit {plan_id} <field> <value> for changes."))
+    plan_id = save_game_plan(get_db, {"name":name,"category":category_row["name"],"description":f"{ram_gb:g}GB RAM • {cpu_percent}% CPU • {disk_gb:g}GB Disk","ram_mb":ram_mb,"cpu_percent":cpu_percent,"disk_mb":disk_mb,"duration_days":days,"cost_coins":cost,"node_id":node_id,"nest_id":nest_id,"egg_id":egg_id,"allocation_id":allocation_id,"icon":icon})
+    await ctx.send(embed=create_success_embed("Game Plan Created", f"ID: {plan_id}\n{icon} {name}\nCategory: {category_row['name']}\nResources: {ram_gb:g}GB RAM • {cpu_percent}% CPU • {disk_gb:g}GB Disk\nUse {PREFIX}game-plan-edit {plan_id} <field> <value> for changes."))
 
 @bot.command(name="game-plan-edit", aliases=["edit-game-plan", "update-game-plan", "modify-game-plan"])
 @is_admin()
 async def game_plan_edit(ctx, plan_id: int, field: str, *, value: str):
-    allowed = {"name","category","description","ram_mb","cpu_percent","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id","docker_image","startup","environment","active","icon"}
+    allowed = {"name","category","description","ram_gb","cpu_percent","disk_gb","ram_mb","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id","docker_image","startup","environment","active","icon"}
     if field not in allowed:
         await ctx.send(embed=create_error_embed("Invalid Field", f"Allowed: {', '.join(sorted(allowed))}"))
         return
@@ -2424,8 +2426,14 @@ async def game_plan_edit(ctx, plan_id: int, field: str, *, value: str):
         return
     raw = {k:getattr(plan,k) for k in GameServerPlan.__dataclass_fields__}
     raw[field] = value
-    if field in {"ram_mb","cpu_percent","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id"}:
+    if field in {"ram_gb","disk_gb","cpu_percent","ram_mb","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id"}:
         raw[field] = int(value)
+        if field == "ram_gb":
+            raw["ram_mb"] = raw[field] * 1024
+            field = "ram_mb"
+        elif field == "disk_gb":
+            raw["disk_mb"] = raw[field] * 1024
+            field = "disk_mb"
     if field == "active":
         raw[field] = 1 if value.lower() in {"1","true","yes","on","active"} else 0
     if field == "environment":
@@ -10152,7 +10160,7 @@ class HelpView(discord.ui.View):
                     (f"{PREFIX}game-upgrade <server_id> <plan_id>", "Upgrade game-server resources with HX Coins"),
                     (f"{PREFIX}game-rename <server_id> <name>", "Rename your game server"),
                     (f"{PREFIX}game-plan-list", "List all game plans (Admin only)"),
-                    (f"{PREFIX}create-game-plan <name> <category> <ram_mb> <cpu_percent> <disk_mb> <days> <cost> <node_id> <nest_id> <egg_id> [allocation_id] [icon]", "Create a game-server plan (Admin only)"),
+                    (f"{PREFIX}create-game-plan <name> <category> <ram_gb> <cpu_percent> <disk_gb> <days> <cost> <node_id> <nest_id> <egg_id> [allocation_id] [icon]", "Create a game-server plan (Admin only)"),
                     (f"{PREFIX}edit-game-plan <id> <field> <value>", "Edit a game-server plan (Admin only)"),
                     (f"{PREFIX}delete-game-plan <id>", "Delete a game-server plan (Admin only)"),
                     (f"{PREFIX}create-game-category <name> [icon] [description]", "Create a game category (Admin only)"),
