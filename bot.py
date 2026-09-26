@@ -2577,6 +2577,72 @@ async def game_admin_delete(ctx, server_id:int):
         await ctx.send(embed=create_success_embed("Game Server Deleted",f"{row['public_id']} force-deleted."))
     except Exception as exc: await ctx.send(embed=create_error_embed("Delete Failed",str(exc)[:800]))
 
+@bot.command(name="game-plan-list")
+@is_admin()
+async def game_plan_list(ctx):
+    plans=get_game_plans(get_db,active_only=False)
+    if not plans:
+        await ctx.send(embed=create_info_embed("Game Plans","No game-server plans configured.")); return
+    embed=create_info_embed(f"{EMOJI_GAME} Game Plan Manager","All configured plans. Use !game-plan-edit to change any field.")
+    for p in plans[:25]:
+        state="Active" if p.active else "Disabled"
+        add_field(embed,f"{p.icon} {p.name} • #{p.id}",f"Category: {p.category}\n{p.ram_mb}MB RAM • {p.cpu_percent}% CPU • {p.disk_mb}MB Disk\n{p.cost_coins:,} HX Coins / {p.duration_days}d\nStatus: {state}",False)
+    await ctx.send(embed=embed)
+
+@bot.command(name="game-category-edit")
+@is_admin()
+async def game_category_edit(ctx, category_id:int, field:str, *, value:str):
+    if field not in {"name","description","icon","active"}:
+        await ctx.send(embed=create_error_embed("Invalid Field","Allowed: name, description, icon, active")); return
+    conn=get_db(); row=conn.execute("SELECT * FROM game_categories WHERE id=?",(category_id,)).fetchone()
+    if not row:
+        conn.close(); await ctx.send(embed=create_error_embed("Not Found","Game category not found.")); return
+    new_value=value
+    if field=="active": new_value=1 if value.lower() in {"1","true","yes","on","active"} else 0
+    try:
+        conn.execute(f"UPDATE game_categories SET {field}=? WHERE id=?",(new_value,category_id)); conn.commit(); conn.close()
+    except sqlite3.IntegrityError:
+        conn.close(); await ctx.send(embed=create_error_embed("Update Failed","That category name is already in use.")); return
+    await ctx.send(embed=create_success_embed("Category Updated",f"Category #{category_id} updated: {field} -> {value}"))
+
+@bot.command(name="game-category-delete")
+@is_admin()
+async def game_category_delete(ctx, category_id:int):
+    conn=get_db(); row=conn.execute("SELECT name FROM game_categories WHERE id=?",(category_id,)).fetchone()
+    if not row: conn.close(); await ctx.send(embed=create_error_embed("Not Found","Game category not found.")); return
+    count=conn.execute("SELECT COUNT(*) FROM game_server_plans WHERE category=?",(row[0],)).fetchone()[0]
+    if count:
+        conn.close(); await ctx.send(embed=create_error_embed("Category In Use",f"{count} plan(s) use this category. Disable it instead of deleting it.")); return
+    conn.execute("DELETE FROM game_categories WHERE id=?",(category_id,)); conn.commit(); conn.close()
+    await ctx.send(embed=create_success_embed("Category Deleted",f"Category #{category_id} was removed."))
+
+@bot.command(name="game-nodes")
+@is_admin()
+async def game_nodes(ctx):
+    try:
+        nodes=await run_in_executor(_ptero_client().list_nodes)
+    except Exception as exc:
+        await ctx.send(embed=create_error_embed("Panel Error",str(exc)[:900])); return
+    embed=create_info_embed("Pterodactyl Nodes","Live nodes from the panel.")
+    for n in nodes[:25]:
+        alloc=n.get("allocated_resources") or {}
+        add_field(embed,f"{EMOJI_GAME_NODE} {n.get('name','Unknown')} • #{n.get('id','?')}",f"FQDN: {n.get('fqdn','-')}\nMemory: {alloc.get('memory','-')} MB\nDisk: {alloc.get('disk','-')} MB",False)
+    await ctx.send(embed=embed)
+
+@bot.command(name="game-allocations")
+@is_admin()
+async def game_allocations(ctx, node_id:int):
+    try:
+        allocations=await run_in_executor(_ptero_client().list_allocations,node_id)
+    except Exception as exc:
+        await ctx.send(embed=create_error_embed("Panel Error",str(exc)[:900])); return
+    embed=create_info_embed(f"{EMOJI_GAME_ALLOCATION} Allocations","Node allocations available for plans.")
+    for a in allocations[:25]:
+        state="Assigned" if a.get("assigned") else "Free"
+        add_field(embed,f"{a.get('ip','-')}:{a.get('port','-')}",f"ID: {a.get('id','-')}\nStatus: {state}\nAlias: {a.get('alias') or '-'}",True)
+    await ctx.send(embed=embed)
+
+
 # Docker container command execution with multi-node support
 async def execute_lxc(container_name: str, command: str, timeout=120, node_id: Optional[int] = None):
     if node_id is None:
