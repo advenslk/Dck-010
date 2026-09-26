@@ -156,10 +156,17 @@ class PterodactylClient:
         payload["deploy"] = {k: v for k, v in payload["deploy"].items() if v is not None}
         return self._request("POST", "/api/application/servers", json=payload).get("attributes", {})
 
-    def power_server(self, server_id: int, signal: str) -> None:
+    def power_server(self, identifier: str, signal: str) -> None:
         if signal not in {"start", "stop", "restart", "kill"}:
             raise PterodactylError("Invalid power action")
-        self._request("POST", f"/api/client/servers/{server_id}/power", json={"signal": signal})
+        self._request("POST", f"/api/client/servers/{identifier}/power", json={"signal": signal})
+
+    def power_server_by_id(self, server_id: int, signal: str) -> None:
+        attrs = self.get_server(server_id)
+        identifier = attrs.get("identifier")
+        if not identifier:
+            raise PterodactylError("Pterodactyl server identifier is unavailable")
+        self.power_server(identifier, signal)
 
     def get_server_details(self, identifier: str) -> Dict[str, Any]:
         return self._request("GET", f"/api/client/servers/{identifier}").get("attributes", {})
