@@ -10338,6 +10338,7 @@ class HelpView(discord.ui.View):
             "plans": "🚀",
             "coupons": "🎟️",
             "vps": "🖥️",
+            "games": "🎮",
             "ports": "🔌",
             "system": "⚙️",
             "bot": "🤖",
@@ -10357,6 +10358,7 @@ class HelpView(discord.ui.View):
             "plans": 0xe91e63, # Pink/Magenta
             "coupons": 0x9b59b6, # Purple
             "vps": 0x2ecc71, # Green
+            "games": 0x5865f2, # Discord blue
             "ports": 0xe74c3c, # Red
             "system": 0xf39c12, # Orange
             "bot": 0x9b59b6, # Purple
