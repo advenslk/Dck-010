@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -154,6 +155,31 @@ class PterodactylClient:
         payload = build_server_payload(plan, name, panel_user_id, external_identifier)
         payload["deploy"] = {k: v for k, v in payload["deploy"].items() if v is not None}
         return self._request("POST", "/api/application/servers", json=payload).get("attributes", {})
+
+    def power_server(self, server_id: int, signal: str) -> None:
+        if signal not in {"start", "stop", "restart", "kill"}:
+            raise PterodactylError("Invalid power action")
+        self._request("POST", f"/api/client/servers/{server_id}/power", json={"signal": signal})
+
+    def get_server_details(self, identifier: str) -> Dict[str, Any]:
+        return self._request("GET", f"/api/client/servers/{identifier}").get("attributes", {})
+
+    def update_server_build(self, server_id: int, memory: int, disk: int, cpu: int, swap: int = 0, io: int = 500) -> None:
+        body = {"memory": int(memory), "swap": int(swap), "disk": int(disk), "io": int(io), "cpu": int(cpu), "threads": None, "oom_disabled": False, "feature_limits": {"databases": 0, "allocations": 1, "backups": 0}}
+        self._request("PATCH", f"/api/application/servers/{server_id}/build", json=body)
+
+    def update_server_details(self, server_id: int, name: Optional[str] = None, description: Optional[str] = None) -> None:
+        body = {}
+        if name is not None: body["name"] = name
+        if description is not None: body["description"] = description
+        if body: self._request("PATCH", f"/api/application/servers/{server_id}/details", json=body)
+
+    def create_user_credentials(self, username: str, email: str) -> tuple[Dict[str, Any], str, bool]:
+        existing = self.get_user(email)
+        if existing:
+            return existing, "", False
+        password = secrets.token_urlsafe(18)
+        return self.create_user(username, email, password), password, True
 
     def get_server(self, server_id: int) -> Dict[str, Any]:
         return self._request("GET", f"/api/application/servers/{server_id}").get("attributes", {})
