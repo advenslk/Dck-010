@@ -13,11 +13,15 @@ import threading
 import time
 import sqlite3
 import random
+import secrets
 import requests
 from dotenv import load_dotenv
 from runtime_guard import build_secure_docker_run, get_container_runtime_limits
 from emoji import (
     EMOJI_REINSTALL, EMOJI_START, EMOJI_STOP, EMOJI_SSH, EMOJI_STATS,
+    EMOJI_GAME, EMOJI_MINECRAFT, EMOJI_BEDROCK, EMOJI_GAME_SERVER, EMOJI_PANEL,
+    EMOJI_CONSOLE, EMOJI_BACKUP, EMOJI_NETWORK, EMOJI_FILES, EMOJI_RENEW,
+    EMOJI_UPGRADE, EMOJI_DELETE, EMOJI_DEPLOY,
 )
 from security import SecurityPolicy, evaluate_vps_request
 from abuse_monitor import AbusePolicy, evaluate_usage, parse_docker_stats, warning_level
@@ -2431,6 +2435,140 @@ async def game_plan_delete(ctx, plan_id: int):
     else:
         await ctx.send(embed=create_error_embed("Plan Not Found", f"Game plan {plan_id} does not exist."))
 
+
+# FULL PTERODACTYL GAME SERVER MANAGEMENT
+def _get_owned_game_server(user_id: str, server_id: int):
+    return next((s for s in get_user_game_servers(get_db, user_id) if int(s["id"]) == int(server_id)), None)
+
+def _game_manage_embed(server, attrs=None):
+    attrs = attrs or {}
+    limits = attrs.get("limits") or {}
+    embed = create_info_embed(f"{EMOJI_GAME_SERVER} {server['name']}", f"ID: {server['public_id']}\nStatus: {attrs.get('status') or server.get('status','unknown')}\nCategory: {server['category']}")
+    add_field(embed, "Resources", f"RAM: {limits.get('memory','-')} MB\nCPU: {limits.get('cpu','-')}%\nDisk: {limits.get('disk','-')} MB", True)
+    add_field(embed, "Subscription", f"Expires: <t:{int(datetime.fromisoformat(server['expires_at']).timestamp())}:R>\nPlan: {server['plan_id']}", True)
+    return embed
+
+class GameControlView(discord.ui.View):
+    def __init__(self, ctx, server, panel_url):
+        super().__init__(timeout=300)
+        self.ctx, self.server = ctx, server
+        actions = [("Start",EMOJI_START,"start"),("Stop",EMOJI_STOP,"stop"),("Restart","🔄","restart"),("Kill","⛔","kill"),("Reinstall",EMOJI_REINSTALL,"reinstall"),("Suspend","🔒","suspend"),("Unsuspend","🔓","unsuspend"),("Renew",EMOJI_RENEW,"renew"),("Upgrade",EMOJI_UPGRADE,"upgrade"),("Delete",EMOJI_DELETE,"delete")]
+        for label, emoji, action in actions:
+            b=discord.ui.Button(label=label,emoji=emoji,style=discord.ButtonStyle.danger if action in {"kill","delete"} else discord.ButtonStyle.secondary)
+            b.callback=self._cb(action); self.add_item(b)
+        if panel_url:
+            self.add_item(discord.ui.Button(label="Open Panel",emoji=EMOJI_PANEL,style=discord.ButtonStyle.link,url=panel_url))
+    def _cb(self, action):
+        async def cb(i):
+            if i.user.id != self.ctx.author.id:
+                await i.response.send_message("This control panel belongs to another user.",ephemeral=True); return
+            await self.perform(i,action)
+        return cb
+    async def perform(self,i,action):
+        await i.response.defer(ephemeral=True)
+        server=_get_owned_game_server(str(i.user.id),self.server["id"])
+        if not server: await i.followup.send("Game server not found.",ephemeral=True); return
+        client=_ptero_client()
+        try:
+            if action in {"start","stop","restart","kill"}:
+                await run_in_executor(client.power_server,int(server["panel_server_id"]),action)
+                msg=f"{server['name']} -> {action}"
+            elif action=="reinstall":
+                await run_in_executor(client.reinstall_server,int(server["panel_server_id"])); msg=f"{server['name']} reinstall started."
+            elif action in {"suspend","unsuspend"}:
+                fn=client.suspend_server if action=="suspend" else client.unsuspend_server
+                await run_in_executor(fn,int(server["panel_server_id"]))
+                conn=get_db(); conn.execute("UPDATE game_servers SET suspended=?,status=? WHERE id=?",(1 if action=="suspend" else 0,action,server["id"])); conn.commit(); conn.close()
+                msg=f"{server['name']} {action}ed."
+            elif action=="renew":
+                plan=get_game_plan(get_db,int(server["plan_id"]))
+                if not plan: raise PterodactylError("The original plan no longer exists.")
+                ok,balance=remove_coins(str(i.user.id),plan.cost_coins,"game_server_renew",f"Renew {server['public_id']}")
+                if not ok: await i.followup.send(embed=create_error_embed("Insufficient HX Coins",f"Required: {plan.cost_coins:,} • Balance: {balance:,}"),ephemeral=True); return
+                current=datetime.fromisoformat(server["expires_at"]); base=max(current,datetime.now(timezone.utc)); expires=(base+timedelta(days=plan.duration_days)).isoformat()
+                conn=get_db(); conn.execute("UPDATE game_servers SET expires_at=?,suspended=0,status='active' WHERE id=?",(expires,server["id"])); conn.commit(); conn.close()
+                if server.get("suspended"): await run_in_executor(client.unsuspend_server,int(server["panel_server_id"]))
+                msg=f"{server['name']} renewed for {plan.duration_days} days."
+            elif action=="upgrade":
+                await i.followup.send(embed=create_info_embed("Upgrade",f"Use {PREFIX}game-upgrade {server['id']} <plan_id> to change resources."),ephemeral=True); return
+            else:
+                await run_in_executor(client.delete_server,int(server["panel_server_id"]),False)
+                conn=get_db(); conn.execute("DELETE FROM game_servers WHERE id=?",(server["id"],)); conn.commit(); conn.close()
+                msg=f"{server['name']} deleted permanently."
+            await i.followup.send(embed=create_success_embed("Game Server Updated",msg),ephemeral=True)
+        except Exception as exc:
+            logger.exception("Game server action failed")
+            await i.followup.send(embed=create_error_embed("Action Failed",str(exc)[:900]),ephemeral=True)
+
+@bot.command(name="game-control")
+async def game_control(ctx, server_id:int):
+    server=_get_owned_game_server(str(ctx.author.id),server_id)
+    if not server: await ctx.send(embed=create_error_embed("Server Not Found","Use !game-manage first.")); return
+    try: attrs=await run_in_executor(_ptero_client().get_server,int(server["panel_server_id"]))
+    except Exception: attrs={}
+    identifier=attrs.get("identifier",""); url=f"{_panel_url()}/server/{identifier}" if _panel_url() and identifier else _panel_url()
+    await ctx.send(embed=_game_manage_embed(server,attrs),view=GameControlView(ctx,server,url))
+
+@bot.command(name="game-upgrade")
+async def game_upgrade(ctx, server_id:int, plan_id:int):
+    server=_get_owned_game_server(str(ctx.author.id),server_id); new=get_game_plan(get_db,plan_id)
+    if not server or not new: await ctx.send(embed=create_error_embed("Upgrade Failed","Server or plan not found.")); return
+    old=get_game_plan(get_db,int(server["plan_id"]))
+    if not old: await ctx.send(embed=create_error_embed("Upgrade Failed","Original plan no longer exists.")); return
+    if new.category.lower()!=server["category"].lower(): await ctx.send(embed=create_error_embed("Upgrade Failed","The new plan must be in the same game category.")); return
+    delta=max(0,new.cost_coins-old.cost_coins)
+    ok,balance=remove_coins(str(ctx.author.id),delta,"game_server_upgrade",f"Upgrade {server['public_id']} to {new.name}") if delta else (True,get_user_coins(str(ctx.author.id)))
+    if not ok: await ctx.send(embed=create_error_embed("Insufficient HX Coins",f"Required: {delta:,} • Balance: {balance:,}")); return
+    try:
+        await run_in_executor(_ptero_client().update_server_build,int(server["panel_server_id"]),new.ram_mb,new.disk_mb,new.cpu_percent)
+        conn=get_db(); conn.execute("UPDATE game_servers SET plan_id=? WHERE id=?",(new.id,server["id"])); conn.commit(); conn.close()
+        await ctx.send(embed=create_success_embed("Server Upgraded",f"{server['name']} -> {new.icon} {new.name}\nCharged: {delta:,} HX Coins"))
+    except Exception as exc:
+        if delta: add_coins(str(ctx.author.id),delta,"game_server_upgrade_refund",f"Refund failed upgrade {server['public_id']}")
+        await ctx.send(embed=create_error_embed("Upgrade Failed",f"Upgrade failed and {delta:,} HX Coins were refunded.\n{str(exc)[:700]}"))
+
+@bot.command(name="game-rename")
+async def game_rename(ctx, server_id:int, *, name:str):
+    server=_get_owned_game_server(str(ctx.author.id),server_id)
+    if not server or not name.strip(): await ctx.send(embed=create_error_embed("Rename Failed","Server not found or invalid name.")); return
+    try:
+        await run_in_executor(_ptero_client().update_server_details,int(server["panel_server_id"]),name.strip())
+        conn=get_db(); conn.execute("UPDATE game_servers SET name=? WHERE id=?",(name.strip(),server["id"])); conn.commit(); conn.close()
+        await ctx.send(embed=create_success_embed("Server Renamed",f"Server is now {name.strip()}."))
+    except Exception as exc: await ctx.send(embed=create_error_embed("Rename Failed",str(exc)[:800]))
+
+@bot.command(name="game-admin-suspend")
+@is_admin()
+async def game_admin_suspend(ctx, server_id:int):
+    conn=get_db(); row=conn.execute("SELECT * FROM game_servers WHERE id=?",(server_id,)).fetchone(); conn.close()
+    if not row: await ctx.send(embed=create_error_embed("Not Found","Game server not found.")); return
+    try:
+        await run_in_executor(_ptero_client().suspend_server,int(row["panel_server_id"]))
+        conn=get_db(); conn.execute("UPDATE game_servers SET suspended=1,status='suspended' WHERE id=?",(server_id,)); conn.commit(); conn.close()
+        await ctx.send(embed=create_success_embed("Server Suspended",f"{row['public_id']} suspended."))
+    except Exception as exc: await ctx.send(embed=create_error_embed("Suspend Failed",str(exc)[:800]))
+
+@bot.command(name="game-admin-unsuspend")
+@is_admin()
+async def game_admin_unsuspend(ctx, server_id:int):
+    conn=get_db(); row=conn.execute("SELECT * FROM game_servers WHERE id=?",(server_id,)).fetchone(); conn.close()
+    if not row: await ctx.send(embed=create_error_embed("Not Found","Game server not found.")); return
+    try:
+        await run_in_executor(_ptero_client().unsuspend_server,int(row["panel_server_id"]))
+        conn=get_db(); conn.execute("UPDATE game_servers SET suspended=0,status='active' WHERE id=?",(server_id,)); conn.commit(); conn.close()
+        await ctx.send(embed=create_success_embed("Server Unsuspended",f"{row['public_id']} is active again."))
+    except Exception as exc: await ctx.send(embed=create_error_embed("Unsuspend Failed",str(exc)[:800]))
+
+@bot.command(name="game-admin-delete")
+@is_admin()
+async def game_admin_delete(ctx, server_id:int):
+    conn=get_db(); row=conn.execute("SELECT * FROM game_servers WHERE id=?",(server_id,)).fetchone(); conn.close()
+    if not row: await ctx.send(embed=create_error_embed("Not Found","Game server not found.")); return
+    try:
+        await run_in_executor(_ptero_client().delete_server,int(row["panel_server_id"]),True)
+        conn=get_db(); conn.execute("DELETE FROM game_servers WHERE id=?",(server_id,)); conn.commit(); conn.close()
+        await ctx.send(embed=create_success_embed("Game Server Deleted",f"{row['public_id']} force-deleted."))
+    except Exception as exc: await ctx.send(embed=create_error_embed("Delete Failed",str(exc)[:800]))
 
 # Docker container command execution with multi-node support
 async def execute_lxc(container_name: str, command: str, timeout=120, node_id: Optional[int] = None):
