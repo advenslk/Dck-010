@@ -2416,7 +2416,7 @@ async def game_plan_create(ctx, name: str, category: str, ram_gb: int, cpu_perce
 @bot.command(name="game-plan-edit", aliases=["edit-game-plan", "update-game-plan", "modify-game-plan"])
 @is_admin()
 async def game_plan_edit(ctx, plan_id: int, field: str, *, value: str):
-    allowed = {"name","category","description","ram_gb","cpu_percent","disk_gb","ram_mb","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id","docker_image","startup","environment","active","icon"}
+    allowed = {"name","category","description","ram_gb","cpu_percent","disk_gb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id","docker_image","startup","environment","active","icon"}
     if field not in allowed:
         await ctx.send(embed=create_error_embed("Invalid Field", f"Allowed: {', '.join(sorted(allowed))}"))
         return
@@ -2426,14 +2426,14 @@ async def game_plan_edit(ctx, plan_id: int, field: str, *, value: str):
         return
     raw = {k:getattr(plan,k) for k in GameServerPlan.__dataclass_fields__}
     raw[field] = value
-    if field in {"ram_gb","disk_gb","cpu_percent","ram_mb","disk_mb","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id"}:
-        raw[field] = int(value)
+    if field in {"ram_gb","disk_gb","cpu_percent","duration_days","cost_coins","node_id","nest_id","egg_id","allocation_id"}:
+        numeric_value = int(value)
         if field == "ram_gb":
-            raw["ram_mb"] = raw[field] * 1024
-            field = "ram_mb"
+            raw["ram_mb"] = numeric_value * 1024
         elif field == "disk_gb":
-            raw["disk_mb"] = raw[field] * 1024
-            field = "disk_mb"
+            raw["disk_mb"] = numeric_value * 1024
+        else:
+            raw[field] = numeric_value
     if field == "active":
         raw[field] = 1 if value.lower() in {"1","true","yes","on","active"} else 0
     if field == "environment":
