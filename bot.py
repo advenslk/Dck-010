@@ -10357,6 +10357,48 @@ async def info_alias(ctx, user: discord.Member = None):
     else:
         await ctx.send(embed=create_error_embed("Access Denied", "This command requires admin privileges."))
 # ============================================
+# GAME SERVER SUBSCRIPTION MONITOR
+# ============================================
+_game_expiration_task = None
+
+async def _run_game_expiration_once():
+    conn=get_db()
+    rows=conn.execute("SELECT * FROM game_servers WHERE suspended=0").fetchall()
+    conn.close()
+    now=datetime.now(timezone.utc)
+    for row in rows:
+        server=dict(row)
+        try: expires=datetime.fromisoformat(server["expires_at"])
+        except (TypeError,ValueError): continue
+        if expires > now: continue
+        try:
+            await run_in_executor(_ptero_client().suspend_server,int(server["panel_server_id"]))
+            conn=get_db(); conn.execute("UPDATE game_servers SET suspended=1,status='expired' WHERE id=?",(server["id"],)); conn.commit(); conn.close()
+            try:
+                owner=await bot.fetch_user(int(server["discord_user_id"]))
+                await owner.send(embed=create_warning_embed("Game Server Expired",f"Your game server {server['name']} has expired and has been suspended. Renew it from the game server control panel."))
+            except Exception: pass
+        except Exception as exc:
+            logger.warning(f"Game expiration handling failed for {server['public_id']}: {exc}")
+
+async def _game_expiration_loop():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try: await _run_game_expiration_once()
+        except asyncio.CancelledError: raise
+        except Exception as exc: logger.error(f"Game expiration monitor error: {exc}")
+        await asyncio.sleep(300)
+
+async def _start_game_expiration_monitor():
+    global _game_expiration_task
+    if _game_expiration_task is None or _game_expiration_task.done():
+        _game_expiration_task=asyncio.create_task(_game_expiration_loop())
+        logger.info("HelzerX game server expiration monitor started")
+
+bot.add_listener(_start_game_expiration_monitor, "on_ready")
+
+
+# ============================================
 # VPS ABUSE MONITOR
 # ============================================
 
