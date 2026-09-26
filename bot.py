@@ -15,6 +15,7 @@ import sqlite3
 import random
 import requests
 from dotenv import load_dotenv
+from runtime_guard import build_secure_docker_run, get_container_runtime_limits
 from emoji import (
     EMOJI_REINSTALL, EMOJI_START, EMOJI_STOP, EMOJI_SSH, EMOJI_STATS,
 )
@@ -2167,11 +2168,11 @@ async def execute_lxc(container_name: str, command: str, timeout=120, node_id: O
         # Use sh -c so this works for both local execution and remote nodes.
         safe_name = shlex.quote(name)
         safe_image = shlex.quote(image)
-        run_command = (
-            f"docker run -d --name {safe_name} --hostname {safe_name} "
-            f"--privileged --cgroupns=host --cap-add=ALL "
-            f"--security-opt apparmor=unconfined --tmpfs /run --tmpfs /run/lock "
-            f"{safe_image} /bin/sh -c 'while true; do sleep 3600; done'"
+        # Harden new VPS containers while preserving the existing VPS runtime.
+        run_command = build_secure_docker_run(
+            name=name,
+            hostname=name,
+            image=image,
         )
         docker_command = (
             "sh -c "
@@ -2196,9 +2197,11 @@ async def execute_lxc(container_name: str, command: str, timeout=120, node_id: O
             # Docker requires memory-swap >= memory. Keep both limits equal
             # so every VPS receives a valid, deterministic memory limit.
             memory_limit = shlex.quote(parts[4])
+            limits = get_container_runtime_limits()
             docker_command = (
                 f"docker update --memory {memory_limit} "
-                f"--memory-swap {memory_limit} {shlex.quote(target)}"
+                f"--memory-swap {memory_limit} "
+                f"--pids-limit {limits['pids_limit']} {shlex.quote(target)}"
             )
         elif len(parts) >= 5 and parts[1] == "set" and parts[3] == "limits.cpu":
             docker_command = f"docker update --cpus {shlex.quote(parts[4])} {shlex.quote(target)}"
