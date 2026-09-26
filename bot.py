@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from emoji import (
     EMOJI_REINSTALL, EMOJI_START, EMOJI_STOP, EMOJI_SSH, EMOJI_STATS,
 )
+from security import SecurityPolicy, evaluate_vps_request
 
 # Load environment variables from .env file
 load_dotenv()
@@ -171,6 +172,13 @@ def init_db():
     settings_init = [
         ('cpu_threshold', '90'),
         ('ram_threshold', '90'),
+        # VPS abuse-protection defaults
+        ('vps_security_enabled', '1'),
+        ('vps_min_account_age_days', '30'),
+        ('vps_min_member_age_days', '7'),
+        ('vps_deploy_cooldown_hours', '24'),
+        ('vps_deploy_attempt_limit', '3'),
+        ('vps_deploy_attempt_window_minutes', '60'),
     ]
     for key, value in settings_init:
         cur.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', (key, value))
@@ -3274,6 +3282,91 @@ def is_user_restricted(user_id: str) -> bool:
         logger.error(f"Failed to check restriction: {e}")
         return False
 
+def get_recent_vps_deploy_attempts(user_id: str, window_minutes: int = 60) -> int:
+    """Count recent VPS deployment attempts for abuse protection."""
+    conn = get_db()
+    cur = conn.cursor()
+    cutoff = (datetime.now() - timedelta(minutes=window_minutes)).isoformat()
+    cur.execute(
+        '''SELECT COUNT(*) FROM security_logs
+           WHERE user_id = ? AND activity_type = 'vps_deploy_attempt'
+             AND created_at >= ?''',
+        (user_id, cutoff)
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return int(count)
+
+def get_recent_vps_deploy_time(user_id: str) -> Optional[datetime]:
+    """Return the latest successful VPS creation timestamp."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT MAX(created_at) FROM vps WHERE user_id = ?', (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row or not row[0]:
+        return None
+    try:
+        return datetime.fromisoformat(row[0])
+    except (TypeError, ValueError):
+        return None
+
+def check_vps_deployment_security(user: discord.Member) -> tuple[bool, int, list[str]]:
+    """Run the high-protection VPS gate before a user deployment."""
+    user_id = str(user.id)
+    if str(user.id) == str(MAIN_ADMIN_ID) or user_id in admin_data.get('admins', []):
+        return True, 0, []
+    if str(get_setting('vps_security_enabled', '1')) != '1':
+        return True, 0, []
+
+    attempt_window = int(get_setting('vps_deploy_attempt_window_minutes', 60))
+    attempt_limit = int(get_setting('vps_deploy_attempt_limit', 3))
+    recent_attempts = get_recent_vps_deploy_attempts(user_id, attempt_window)
+    cooldown_hours = int(get_setting('vps_deploy_cooldown_hours', 24))
+    last_deploy = get_recent_vps_deploy_time(user_id)
+    cooldown_reason = None
+    if last_deploy:
+        last_deploy = last_deploy.replace(tzinfo=last_deploy.tzinfo or timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - last_deploy).total_seconds()
+        if elapsed < cooldown_hours * 3600:
+            remaining = max(1, int((cooldown_hours * 3600 - elapsed) // 3600))
+            cooldown_reason = f'VPS deployment cooldown is active ({remaining}h remaining)'
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('SELECT trust_score, restricted FROM user_trust WHERE user_id = ?', (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    trust_score = int(row['trust_score']) if row else 100
+    restricted = bool(row['restricted']) if row else False
+
+    policy = SecurityPolicy(
+        min_account_age_days=int(get_setting('vps_min_account_age_days', 30)),
+        min_member_age_days=int(get_setting('vps_min_member_age_days', 7)),
+    )
+    allowed, risk_score, reasons = evaluate_vps_request(
+        account_created_at=getattr(user, 'created_at', None),
+        member_joined_at=getattr(user, 'joined_at', None),
+        trust_score=trust_score,
+        restricted=restricted,
+        recent_attempts=recent_attempts,
+        policy=policy,
+    )
+    if recent_attempts >= attempt_limit:
+        allowed = False
+        reasons.append(f'too many deployment attempts in the last {attempt_window} minutes')
+    if cooldown_reason:
+        allowed = False
+        reasons.append(cooldown_reason)
+
+    log_security_event(
+        user_id, 'vps_deploy_attempt',
+        f'VPS deployment request; risk={risk_score}; trust={trust_score}',
+        'low' if allowed else ('high' if risk_score >= 50 else 'medium'),
+        json.dumps({'risk_score': risk_score, 'trust_score': trust_score})
+    )
+    return allowed, risk_score, list(dict.fromkeys(reasons))
+
 async def notify_admins_security(title: str, description: str, user_id: str = None):
     """Notify admins of security events"""
     try:
@@ -3778,10 +3871,38 @@ async def create_vps(ctx, ram: int, cpu: int, disk: int, user: discord.Member, d
 async def deploy_vps(ctx, plan_id: int = None):
     """Deploy your own VPS using coins - Use !deploy-plans to see available plans"""
     user_id = str(ctx.author.id)
-    
+
+    # High-protection abuse gate. Admin-created VPS flow is intentionally
+    # separate; this protects self-service VPS deployment.
+    allowed, risk_score, security_reasons = check_vps_deployment_security(ctx.author)
+    if not allowed:
+        reason_text = "\n".join(f"• {reason}" for reason in security_reasons[:5])
+        log_security_event(
+            user_id, 'vps_deploy_blocked',
+            f'Blocked self-service VPS deployment; risk={risk_score}: {reason_text}',
+            'high',
+            json.dumps({'risk_score': risk_score, 'reasons': security_reasons[:5]})
+        )
+        await ctx.send(embed=create_error_embed(
+            'VPS Request Blocked',
+            f"HelzerX Cloud's abuse protection could not approve this request.\n\n"
+            f"**Risk Score:** `{risk_score}`\n"
+            f"{reason_text}\n\n"
+            f"If this is a mistake, contact an administrator."
+        ))
+        if risk_score >= 50:
+            try:
+                await notify_admins_security(
+                    'VPS deployment blocked',
+                    f"Automatic abuse protection blocked a VPS request.\n\n**Risk score:** `{risk_score}`\n**Reasons:**\n{reason_text}",
+                    user_id
+                )
+            except Exception:
+                pass
+        return
+
     # Check if user already has a VPS
-    vps_list = vps_data.get(user_id, [])
-    if len(vps_list) >= 1:
+    vps_list = vps_data.get(user_id, [])    if len(vps_list) >= 1:
         await ctx.send(embed=create_error_embed("❌ VPS Limit Reached", 
             f"You already have **{len(vps_list)} VPS**!\n\n"
             f"**Limit:** 1 VPS per user\n"
