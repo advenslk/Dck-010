@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import requests
+from emoji import EMOJI_GAME_JAVA, EMOJI_GAME_BEDROCK, EMOJI_GAME_OTHER
 
 
 @dataclass(frozen=True)
@@ -277,9 +278,9 @@ def init_pterodactyl_db(get_db) -> None:
         created_at TEXT NOT NULL
     )""")
     defaults = [
-        ("Minecraft Java", "Java Edition servers", "⛏️"),
-        ("Minecraft Bedrock", "Bedrock Edition servers", "🧱"),
-        ("Other Games", "Other Pterodactyl-supported games", "🎮"),
+        ( "Minecraft Java", "Java Edition servers", EMOJI_GAME_JAVA),
+        ("Minecraft Bedrock", "Bedrock Edition servers", EMOJI_GAME_BEDROCK),
+        ("Other Games", "Other Pterodactyl-supported games", EMOJI_GAME_OTHER),
     ]
     for name, description, icon in defaults:
         cur.execute("INSERT OR IGNORE INTO game_categories (name, description, icon, created_at) VALUES (?, ?, ?, datetime('now'))", (name, description, icon))
