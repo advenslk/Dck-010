@@ -8,6 +8,7 @@ class SecurityPolicy:
     min_account_age_days: int = 30
     min_member_age_days: int = 7
     max_risk_score: int = 49
+    max_recent_attempts: int = 3
 
 
 def _days_since(timestamp: Optional[datetime], now: datetime) -> Optional[float]:
@@ -60,7 +61,7 @@ def evaluate_vps_request(
         reasons.append("trust score is below the VPS safety threshold")
         score += 30
 
-    if recent_attempts >= 3:
+    if recent_attempts >= policy.max_recent_attempts:
         reasons.append("too many recent VPS deployment attempts")
         score += min(30, recent_attempts * 5)
 
