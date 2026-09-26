@@ -2333,16 +2333,23 @@ async def panel_account(ctx):
     try:
         user_id = str(ctx.author.id)
         account = get_panel_account(get_db, user_id)
+        generated_password = None
         if not account:
             client = _ptero_client()
             username = _panel_username(user_id)
             email = _panel_email(user_id)
-            panel_user = await run_in_executor(client.ensure_user, username, email)
+            panel_user, generated_password, created = await run_in_executor(client.create_user_credentials, username, email)
             save_panel_account(get_db, user_id, int(panel_user["id"]), panel_user.get("username", username), panel_user.get("email", email))
             account = get_panel_account(get_db, user_id)
         embed = create_success_embed("Pterodactyl Account", "Your HelzerX game-server panel account is ready.")
         add_field(embed, "Username", account["username"], True)
         add_field(embed, "Email", account["email"], True)
+        if generated_password:
+            add_field(embed, "Initial Password", f"||{generated_password}||", False)
+            try:
+                await ctx.author.send(embed=create_info_embed("Pterodactyl Login", f"Panel: {_panel_url()}\nUsername: {account['username']}\nPassword: ||{generated_password}||\n\nChange your password after first login."))
+            except Exception:
+                pass
         view = discord.ui.View(timeout=300)
         if _panel_url():
             view.add_item(discord.ui.Button(label="Open Panel", emoji="🌐", style=discord.ButtonStyle.link, url=_panel_url()))
@@ -2471,7 +2478,7 @@ class GameControlView(discord.ui.View):
         client=_ptero_client()
         try:
             if action in {"start","stop","restart","kill"}:
-                await run_in_executor(client.power_server,int(server["panel_server_id"]),action)
+                await run_in_executor(client.power_server_by_id,int(server["panel_server_id"]),action)
                 msg=f"{server['name']} -> {action}"
             elif action=="reinstall":
                 await run_in_executor(client.reinstall_server,int(server["panel_server_id"])); msg=f"{server['name']} reinstall started."
