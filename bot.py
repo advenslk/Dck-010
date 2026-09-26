@@ -2205,10 +2205,10 @@ class GamePlanView(discord.ui.View):
         self.select = discord.ui.Select(placeholder="Select a plan", options=options or [discord.SelectOption(label="No active plans", value="none")])
         self.select.callback = self.select_plan
         self.add_item(self.select)
-        self.create_button = discord.ui.Button(label="Create Server", emoji="🚀", style=discord.ButtonStyle.success, disabled=not bool(plans))
+        self.create_button = discord.ui.Button(label="Create Server", emoji=EMOJI_DEPLOY, style=discord.ButtonStyle.success, disabled=not bool(plans))
         self.create_button.callback = self.create_server
         self.add_item(self.create_button)
-        self.back_button = discord.ui.Button(label="Categories", emoji="↩️", style=discord.ButtonStyle.secondary)
+        self.back_button = discord.ui.Button(label="Categories", emoji=EMOJI_RENEW, style=discord.ButtonStyle.secondary)
         self.back_button.callback = self.back
         self.add_item(self.back_button)
         self.selected_plan_id = None
@@ -2279,7 +2279,7 @@ class GameServerNameModal(discord.ui.Modal, title="Create Game Server"):
             embed = create_success_embed("Game Server Created", f"{str(self.server_name)} is being provisioned.\n\nID: {public_id}\nPlan: {plan.icon} {plan.name}\nExpires: <t:{int(datetime.fromisoformat(expires_at).timestamp())}:R>")
             view = discord.ui.View(timeout=300)
             if panel_link:
-                view.add_item(discord.ui.Button(label="Open Panel", emoji="🌐", style=discord.ButtonStyle.link, url=panel_link))
+                view.add_item(discord.ui.Button(label="Open Panel", emoji=EMOJI_PANEL, style=discord.ButtonStyle.link, url=panel_link))
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         except Exception as exc:
             add_coins(user_id, plan.cost_coins, "game_server_refund", f"Refund for failed game server deployment: {plan.name}")
@@ -2315,7 +2315,7 @@ class GameServerManageView(discord.ui.View):
         except Exception:
             identifier = ""
             status = server.get("status", "unknown")
-        embed = create_info_embed(f"🎮 {server['name']}", f"{server['public_id']}\nStatus: {status}")
+        embed = create_info_embed(f"{EMOJI_GAME_SERVER} {server['name']}", f"{server['public_id']}\nStatus: {status}")
         add_field(embed, "Category", server["category"], True)
         add_field(embed, "Expires", f"<t:{int(datetime.fromisoformat(server['expires_at']).timestamp())}:R>", True)
         view = discord.ui.View(timeout=300)
@@ -2348,7 +2348,7 @@ async def panel_account(ctx):
 
 @bot.command(name="game", aliases=["game-server", "create-game"])
 async def game_server(ctx):
-    await ctx.send(embed=create_info_embed("🎮 Game Servers", "Choose a game category to view available plans."), view=GameCategoryView(ctx))
+    await ctx.send(embed=create_info_embed(f"{EMOJI_GAME} Game Servers", "Choose a game category to view available plans."), view=GameCategoryView(ctx))
 
 @bot.command(name="game-manage", aliases=["games", "game-servers"])
 async def game_manage(ctx):
@@ -2356,12 +2356,12 @@ async def game_manage(ctx):
     if not servers:
         await ctx.send(embed=create_error_embed("No Game Servers", f"Use {PREFIX}game to deploy your first server."))
         return
-    await ctx.send(embed=create_info_embed("🎮 Your Game Servers", "Select a server to open its management panel."), view=GameServerManageView(ctx, servers))
+    await ctx.send(embed=create_info_embed(f"{EMOJI_GAME} Your Game Servers", "Select a server to open its management panel."), view=GameServerManageView(ctx, servers))
 
 @bot.command(name="game-plans")
 async def game_plans(ctx):
     categories = get_game_categories(get_db)
-    embed = create_info_embed("🎮 Game Server Plans", "Plans are grouped by game category.")
+    embed = create_info_embed(f"{EMOJI_GAME} Game Server Plans", "Plans are grouped by game category.")
     for category in categories:
         plans = get_game_plans(get_db, category["name"])
         if plans:
