@@ -82,3 +82,56 @@ def test_help_category_emojis_use_centralized_game_constants():
     assert '"ports": EMOJI_NETWORK' in helper
     assert '"nodes": EMOJI_GAME_NODE' in helper
     assert '"admin": EMOJI_GAME_SECURITY' in helper
+
+
+import re
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent))
+import emoji as emoji_registry
+
+
+_EMOJI_PATTERN = re.compile(
+    r"[\U0001F000-\U0001FAFF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF]"
+    r"(?:[\uFE0F\u20E3\U0001F3FB-\U0001F3FF]*)?"
+    r"(?:\u200D[\U0001F000-\U0001FAFF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF]"
+    r"(?:[\uFE0F\u20E3\U0001F3FB-\U0001F3FF]*)?)*"
+)
+
+
+def test_every_bot_emoji_is_registered_in_emoji_module():
+    source_emojis = set(_EMOJI_PATTERN.findall(BOT_SOURCE))
+    assert len(source_emojis) >= 90
+    missing = source_emojis.difference(emoji_registry.EMOJI_REPLACEMENTS)
+    assert not missing, f"Unregistered bot emojis: {sorted(missing)}"
+
+
+def test_emoji_registry_exposes_replacement_function_and_custom_mappings():
+    assert callable(emoji_registry.replace_emojis)
+    assert emoji_registry.replace_emojis("🎮") == emoji_registry.EMOJI_GAME
+    assert emoji_registry.replace_emojis("🔄") == emoji_registry.EMOJI_REINSTALL
+    assert emoji_registry.replace_emojis("📊") == emoji_registry.EMOJI_STATS
+    assert emoji_registry.replace_emojis("❌") == emoji_registry.EMOJI_CANCEL
+    assert emoji_registry.replace_emojis("✅") == emoji_registry.EMOJI_SUCCESS
+
+
+def test_discord_send_paths_apply_centralized_emoji_replacement():
+    assert "replace_emojis(" in BOT_SOURCE
+    assert "replace_emojis(content)" in BOT_SOURCE
+    assert "replace_emojis" in BOT_SOURCE[BOT_SOURCE.index("def _install_components_v2_compat"):]
+
+
+def test_emoji_registry_has_all_existing_custom_constants():
+    required = [
+        "EMOJI_REINSTALL", "EMOJI_START", "EMOJI_STOP", "EMOJI_SSH",
+        "EMOJI_STATS", "EMOJI_RESOURCES", "EMOJI_EXPIRATION",
+        "EMOJI_USAGE", "EMOJI_CONTROLS", "EMOJI_WARNING", "EMOJI_SUCCESS",
+        "EMOJI_CONFIRM", "EMOJI_CANCEL", "EMOJI_GAME", "EMOJI_MINECRAFT",
+        "EMOJI_BEDROCK", "EMOJI_GAME_SERVER", "EMOJI_PANEL", "EMOJI_CONSOLE",
+        "EMOJI_BACKUP", "EMOJI_NETWORK", "EMOJI_FILES", "EMOJI_RENEW",
+        "EMOJI_UPGRADE", "EMOJI_DELETE", "EMOJI_DEPLOY", "EMOJI_GAME_JAVA",
+        "EMOJI_GAME_BEDROCK", "EMOJI_GAME_OTHER", "EMOJI_GAME_CATEGORY",
+        "EMOJI_GAME_NODE", "EMOJI_GAME_ALLOCATION", "EMOJI_GAME_SECURITY",
+    ]
+    for name in required:
+        assert hasattr(emoji_registry, name), name
