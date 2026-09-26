@@ -3343,6 +3343,7 @@ def check_vps_deployment_security(user: discord.Member) -> tuple[bool, int, list
     policy = SecurityPolicy(
         min_account_age_days=int(get_setting('vps_min_account_age_days', 30)),
         min_member_age_days=int(get_setting('vps_min_member_age_days', 7)),
+        max_recent_attempts=attempt_limit,
     )
     allowed, risk_score, reasons = evaluate_vps_request(
         account_created_at=getattr(user, 'created_at', None),
